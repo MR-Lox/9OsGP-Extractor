@@ -23,7 +23,10 @@ et en fait un jeu autonome qui démarre directement sur la course, avec un vrai 
 | 🎥 **Nouvelles vues caméra** | Poursuite (vue d'origine), **Capot** et **Intérieure sans capot** (caméra au pare-chocs). |
 | 🖥️ **Affichage** | Plein écran, plein écran fenêtré ou fenêtré, au choix de la résolution. |
 | 🎨 **Graphismes** | Activez ou coupez le bezel de borne d'arcade, l'effet CRT, les contours noirs (cel shading), le post-traitement BD et la trame halftone sur les éclairages. |
-| 🎬 **Replay** | Après la course, l'écran « PRESS START » rejoue la course en boucle, avec un réalisateur automatique : caméras TV au bord de la piste, poursuite, hélico, capot… |
+| 🕹️ **Ambiance borne d'arcade** | Présentation de la voiture avant le départ (trois plans qui se rapprochent, puis votre vue de course pour le compte à rebours), voiture immobilisée pendant le décompte, et après la course : replay, GAME OVER, transition à points noirs, puis « PRESS START ». |
+| 🎬 **Replay** | Après la course, la course est rejouée avec ses effets (fumée, terre, étincelles, flammes, feux de freins) et un réalisateur automatique : caméras TV au bord de la piste, poursuite, hélico, capot… Le dernier replay se revoit à tout moment avec **F9**. |
+| 🔊 **Audio** | Volumes général, musique, moteurs et effets. Bande-son au choix : la musique d'origine ou vos propres fichiers mp3 / ogg / wav (un morceau ou tous au hasard). |
+| 🌍 **5 langues** | Menu d'options en English, Español, Français, Deutsch et Português BR (les langues de Takeover 2). |
 | ⏸️ **Menu Pause épuré** | Fond transparent pour garder la course visible, entrée OPTIONS retirée (le menu F1 la remplace). |
 | 📊 **HUD personnalisable** | Compteur de vitesse déplaçable et redimensionnable à part, autres infos remontables, plaquées aux bords en écran large, ou masquées bloc par bloc. |
 | 🎮 **Contrôles** | Réassignation des touches clavier et manette. |
@@ -75,34 +78,42 @@ Relancer l'extracteur met à jour une extraction existante : seuls les fichiers 
 |---|---|
 | **F1** | Ouvrir / fermer le menu d'options (le jeu se met en pause) |
 | **C** · manette **Y** / **Select** · bouton du volant au choix | Changer de vue : Poursuite → Capot → Intérieure sans capot |
-| **Échap** | Fermer le menu |
+| **F9** (écran « PRESS START ») | Revoir le dernier replay |
+| **Échap** | Fermer le menu d'options, sinon proposer de quitter le jeu |
 
 ### Menu d'options
 
-- **Affichage** : mode d'affichage, résolution.
+- **Affichage** : langue, mode d'affichage, résolution.
 - **Graphismes** :
   - Bezel (cadre de la borne d'arcade)
   - Effet écran CRT
   - Contours noirs (cel shading)
   - Post-traitement BD
   - Trame BD sur les éclairages
-- **Caméra** : choix de la vue. Pour les vues intérieures, réglage du champ de vision, de la hauteur, de la position avant/arrière et de l'inclinaison.
+- **Caméra** : choix de la vue, replay, présentation de la voiture avant le départ. Pour les vues intérieures, réglage du champ de vision, de la hauteur, de la position avant/arrière et de l'inclinaison.
 - **HUD** :
   - **Compte-tours et vitesse** : taille, position horizontale et verticale, placement en bas de l'écran en vue capot / intérieure.
   - **Autres informations** (temps, tour, position, temps au tour) : taille, hauteur, écartement horizontal et vertical (à 1, les blocs sont plaqués contre les bords en 16:9 / 21:9), marge aux bords.
   - Affichage ou masquage de chaque bloc, messages compris (départ, checkpoint, contresens).
+- **Audio** : volumes (général, musique, moteurs, effets sonores) et bande-son. Pour utiliser vos propres musiques, placez des fichiers mp3, ogg ou wav dans un dossier `Music` à côté de `9OsGP.exe` : ils apparaissent dans la liste, avec un mode aléatoire dès qu'il y en a plusieurs.
 - **Contrôles** : réassignation clavier et manette, et retour aux valeurs par défaut. L'onglet **Volant / pédalier** est détaillé ci-dessous.
 
 Les réglages sont enregistrés dans `9OsGP_settings.ini`, à côté de `9OsGP.exe`. Ils sont réappliqués au lancement, même si le jeu d'origine tente de remettre son propre mode d'affichage.
 
 ### 🎬 Replay
 
-Pendant la course, la position de toutes les voitures (carrosserie, roues) est enregistrée 30 fois par seconde. Après l'arrivée (ou un Game Over), l'écran « PRESS START » rejoue la course en boucle jusqu'au lancement d'une nouvelle course :
+Pendant la course, la position de toutes les voitures (carrosserie, roues) est enregistrée 30 fois par seconde. Après l'arrivée (ou un Game Over), la course est rejouée en boucle, comme sur une borne d'arcade :
 
 - **Réalisation automatique** : plans TV au bord de la piste qui suivent la voiture avec un zoom, poursuite, hélico, vue avant, vue de côté et vue capot.
-- **Plans propres** : un plan n'est retenu que si la voiture reste visible, sans mur entre elle et la caméra. Il est coupé si un obstacle s'interpose.
-- **Lancement d'une course** : appuyer sur START arrête le replay et lance une nouvelle course.
+- **Effets** : fumée de dérapage, terre, étincelles, flammes d'échappement et feux de freins sont enregistrés et rejoués.
+- **Plans propres** : les caméras restent le long de la route parcourue par les voitures, et un plan est coupé si un obstacle s'interpose.
+- **Enchaînement** : la course terminée, le replay démarre directement. START ou l'accélérateur affiche le GAME OVER du jeu sur fond assombri, puis la transition à points noirs mène à l'écran « PRESS START ».
+- **Revoir le dernier replay** : **F9** sur l'écran « PRESS START ». Il est enregistré dans `last_replay.rbr` et reste disponible après avoir quitté le jeu.
 - **Désactivation** : dans **F1 › Caméra › Replay de la course**.
+
+### 🚦 Départ
+
+Après START, trois plans se rapprochent de la voiture, puis la caméra rejoint votre vue de course (poursuite, capot ou intérieure), sur laquelle se joue le compte à rebours (désactivable dans **F1 › Caméra**). Le jeu continue de tourner pendant ces plans (confettis, public). Pendant le décompte, la voiture reste sur la grille : on peut faire monter le moteur dans les tours, mais pas partir avant le GO.
 
 ### 🏎️ Volant, pédalier et retour de force
 
@@ -138,6 +149,7 @@ L'extracteur ne modifie aucun code du jeu. Il :
 - il repositionne les blocs du canvas `90sGP_canvas/in_game` du HUD ;
 - pour le replay, il enregistre les poses des voitures et en garde des copies purement visuelles (sans physique ni scripts), rejouées sur l'écran titre avec sa propre caméra ;
 - il remet le chrono de course à 50 s à chaque départ (le jeu d'origine le laissait tourner sur l'écran titre) ;
+- il coupe les caméras de débogage laissées actives sur chaque voiture de l'IA, qui calculaient l'image de toute la scène pour rien ;
 - il s'appuie sur Rewired pour la réassignation des contrôles. Pour un volant, il crée une configuration et une calibration d'axes dédiées : la voiture lit les actions `steer`, `handgun` (accélérateur) et `run` (frein / drift) en analogique ;
 - il pilote le retour de force par appels DirectInput 8 directs (ressort, amortisseur, force constante), sans dépendance externe.
 

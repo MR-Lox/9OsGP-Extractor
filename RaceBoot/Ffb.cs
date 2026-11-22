@@ -27,14 +27,14 @@ namespace RaceBoot
         {
             if (!Settings.Ffb || Application.platform != RuntimePlatform.WindowsPlayer)
             {
-                if (dev != IntPtr.Zero) Shutdown("désactivé");
+                if (dev != IntPtr.Zero) Shutdown(L.T("désactivé"));
                 return;
             }
             if (dev == IntPtr.Zero)
             {
                 if (Time.unscaledTime < retryAt) return;
                 retryAt = Time.unscaledTime + 5f;
-                try { Init(); } catch (Exception e) { Status = "erreur : " + e.Message; Shutdown(Status); }
+                try { Init(); } catch (Exception e) { Status = L.T("erreur : ") + e.Message; Shutdown(Status); }
                 if (dev == IntPtr.Zero) return;
             }
 
@@ -78,7 +78,7 @@ namespace RaceBoot
                 SetCondition(damper, damperCoef);
                 SetConstant(constant, magnitude);
             }
-            catch (Exception e) { Shutdown("erreur : " + e.Message); }
+            catch (Exception e) { Shutdown(L.T("erreur : ") + e.Message); }
         }
 
         // ---------------- DirectInput setup ----------------
@@ -158,7 +158,7 @@ namespace RaceBoot
                 return preferred ? 0 : 1; // DIENUM_STOP / DIENUM_CONTINUE
             };
             Check(Fn<EnumDevicesFn>(di, 4)(di, DI8DEVCLASS_GAMECTRL, keepCb, IntPtr.Zero, DIEDFL_ATTACHEDONLY | DIEDFL_FORCEFEEDBACK), "EnumDevices");
-            if (foundGuid == Guid.Empty) { Shutdown("aucun volant à retour de force détecté"); return; }
+            if (foundGuid == Guid.Empty) { Shutdown(L.T("aucun volant à retour de force détecté")); return; }
 
             var guid = foundGuid;
             Check(Fn<CreateDeviceFn>(di, 3)(di, ref guid, out dev, IntPtr.Zero), "CreateDevice");
@@ -201,7 +201,7 @@ namespace RaceBoot
             spring = CreateCondition(GUID_Spring);
             damper = CreateCondition(GUID_Damper);
             constant = CreateConstant();
-            Status = "actif sur " + foundName;
+            Status = L.T("actif sur ") + foundName;
             Debug.Log("[RaceBoot] FFB " + Status);
         }
 

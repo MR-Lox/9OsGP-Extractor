@@ -93,6 +93,15 @@ namespace RaceBoot
                 overriding = true;
             }
 
+            Pose(view, out var pos, out var rot);
+            cam!.transform.SetPositionAndRotation(pos, rot);
+            cam.fieldOfView = Settings.CamFov;
+
+            SetCarHidden(view == Bumper && !Arcade.ShotsPlaying);
+        }
+
+        static void Pose(int view, out Vector3 pos, out Quaternion rot)
+        {
             var b = localBounds;
             Vector3 local;
             if (view == Hood)
@@ -102,11 +111,19 @@ namespace RaceBoot
             local += new Vector3(0f, Settings.CamHeight, Settings.CamForward);
 
             // Follow the car's yaw/pitch but damp its body roll so the view does not wobble too much.
-            var rot = Quaternion.LookRotation(car!.forward, Vector3.Lerp(Vector3.up, car.up, 0.5f));
-            cam!.transform.SetPositionAndRotation(car.TransformPoint(local), rot * Quaternion.Euler(Settings.CamPitch, 0f, 0f));
-            cam.fieldOfView = Settings.CamFov;
+            var r = Quaternion.LookRotation(car!.forward, Vector3.Lerp(Vector3.up, car.up, 0.5f));
+            pos = car.TransformPoint(local);
+            rot = r * Quaternion.Euler(Settings.CamPitch, 0f, 0f);
+        }
 
-            SetCarHidden(view == Bumper);
+        // Pose of the chosen interior view (hood / bumper), for the race intro.
+        public static bool InteriorPose(out Vector3 pos, out Quaternion rot)
+        {
+            pos = Vector3.zero; rot = Quaternion.identity;
+            int view = Settings.CameraView;
+            if (view == Chase || !Resolve()) return false;
+            Pose(view, out pos, out rot);
+            return true;
         }
 
         static Vector3? hoodPoint;

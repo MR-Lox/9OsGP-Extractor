@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using System.Threading.Tasks;
+using Rewired;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
@@ -14,10 +17,13 @@ namespace RaceBoot
     // DontDestroyOnLoad stage. After the race the game reloads the scene and waits on its "PRESS START"
     // screen: the replay then plays in a loop there, filmed by an automatic director (trackside TV cameras,
     // chase, helicopter, front, side and hood shots), until a new race is started.
-    public class Replay : MonoBehaviour
+    public partial class Replay : MonoBehaviour
     {
         public static bool Playing => inst != null && inst.playing;
         public static string? DebugForceShot;   // test bench only
+        public static void PlaySaved() => inst?.DebugPlay();   // test bench only
+        public static void PressForTest() { if (inst != null) inst.pressedForTest = true; }   // test bench only
+        public static bool GameOverShown => inst != null && inst.gameOverUntil > 0f;
 
         const float SampleRate = 30f;
         const float MaxDuration = 20f * 60f;
@@ -43,6 +49,7 @@ namespace RaceBoot
             public Vector3 Scale = Vector3.one;
             public readonly List<Track> Tracks = new List<Track>();
             public readonly List<bool> Visible = new List<bool>();
+            public readonly List<Fx> Fx = new List<Fx>();
         }
 
         class Recording
@@ -52,12 +59,49 @@ namespace RaceBoot
             public Vector3? Hood;
             public float Start;          // loop start (just before GO)
             public float Duration => Times.Count > 0 ? Times[Times.Count - 1] : 0f;
+
+            // Cells (4 m, horizontal) where a car has driven: the road. Most of the scenery has no collider,
+            // so the cameras stay inside this corridor and look along it.
+            HashSet<long>? corridor;
+            const float Cell = 4f;
+            static long Key(int x, int z) => ((long)x << 32) ^ (uint)z;
+
+            void Build()
+            {
+                corridor = new HashSet<long>();
+                foreach (var a in Actors)
+                {
+                    var p = a.Tracks[0].P;
+                    for (int i = 0; i < p.Count; i += 2)
+                        if (a.Visible[i]) corridor.Add(Key(Mathf.FloorToInt(p[i].x / Cell), Mathf.FloorToInt(p[i].z / Cell)));
+                }
+            }
+
+            public bool Inside(Vector3 v, float margin)
+            {
+                if (corridor == null) Build();
+                int cx = Mathf.FloorToInt(v.x / Cell), cz = Mathf.FloorToInt(v.z / Cell), r = Mathf.CeilToInt(margin / Cell);
+                for (int x = -r; x <= r; x++)
+                    for (int z = -r; z <= r; z++)
+                        if (corridor!.Contains(Key(cx + x, cz + z))) return true;
+                return false;
+            }
+
+            public bool SegmentInside(Vector3 a, Vector3 b, float margin)
+            {
+                float len = Vector3.Distance(a, b);
+                int n = Mathf.Max(1, Mathf.CeilToInt(len / 3f));
+                for (int i = 0; i <= n; i++)
+                    if (!Inside(Vector3.Lerp(a, b, i / (float)n), margin)) return false;
+                return true;
+            }
         }
 
         static Replay? inst;
         Recording? rec, last;
         GameObject? stage;
-        bool recording, playing;
+        bool recording, playing, forced;
+        bool autoPending;   // the last race has not been replayed yet
         float recStart, nextSample, discoverUntil, nextDiscover, skipSince = -1f;
         readonly HashSet<Transform> known = new HashSet<Transform>();
 
@@ -78,6 +122,8 @@ namespace RaceBoot
 
         string RaceState()
         {
+            // While the replay holds the race manager (disabled), it is still on its "PRESS START" state.
+            if (heldManager) return "skip?";
             if (!raceManager)
             {
                 raceManager = null; rmFsm = null;
@@ -115,7 +161,7 @@ namespace RaceBoot
             lastState = st;
             if (playing)
             {
-                if ((st != "skip?" && st != "play_intro") || !Settings.ReplayEnabled) StopPlayback();
+                if ((st != "skip?" && st != "play_intro") || (!Settings.ReplayEnabled && !forced)) StopPlayback();
                 return;
             }
 
@@ -132,10 +178,12 @@ namespace RaceBoot
                 }
             }
 
-            if (!recording && last != null && st == "skip?" && Settings.ReplayEnabled)
+            // Straight from the end of the race into the replay: started as soon as the title screen comes up,
+            // before its "PRESS START" shows.
+            if (!recording && last != null && autoPending && (st == "skip?" || st == "play_intro") && Settings.ReplayEnabled)
             {
-                if (skipSince < 0f) skipSince = Time.unscaledTime;
-                else if (Time.unscaledTime - skipSince > 0.4f) StartPlayback();
+                autoPending = false;
+                StartPlayback();
             }
             else skipSince = -1f;
         }
@@ -180,12 +228,7 @@ namespace RaceBoot
             nextSample = 0f;
             discoverUntil = Time.time + 8f;
             nextDiscover = 0f;
-            if (!stage)
-            {
-                stage = new GameObject("RaceBootReplayStage");
-                DontDestroyOnLoad(stage);
-                stage.SetActive(false);
-            }
+            EnsureStage();
             AddActor(PlayerBody()!, true);
             try { rec.Hood = CameraViews.HoodLocal(); } catch { }
             Discover();
@@ -207,34 +250,18 @@ namespace RaceBoot
             known.Add(body);
             var a = new Actor { Name = body.parent ? body.parent.name : body.name, Player = player, Src = body };
 
-            // Visual-only copy, created under the inactive stage so none of its scripts wake up.
-            var clone = Instantiate(body.gameObject, stage!.transform);
-            clone.name = "Replay " + a.Name;
             a.Scale = body.lossyScale;
-            clone.transform.localScale = a.Scale;   // the stage has no scale
-            Strip(clone);
-            a.Clone = clone;
-
-            a.Tracks.Add(new Track { World = true, Src = body, Dst = { clone.transform } });
+            a.Tracks.Add(new Track { World = true, Src = body });
             foreach (var d in body.GetComponentsInChildren<Transform>(true))
             {
                 if (d == body) continue;
                 string n = d.name;
                 bool wheel = n.IndexOf("wheel", StringComparison.OrdinalIgnoreCase) >= 0;
                 if (!(n == "body_pivot" || n == "Body" || (wheel && !n.EndsWith("LOD2") && !n.EndsWith("LOD3")))) continue;
-                var t = new Track { Path = RelPath(body, d), Src = d };
-                var dst = clone.transform.Find(t.Path);
-                if (!dst) continue;
-                t.Dst.Add(dst!);
-                // LOD1 drives its LOD2 / LOD3 siblings too.
-                if (n.EndsWith("LOD1") && dst!.parent)
-                {
-                    string prefix = n.Substring(0, n.Length - 4);
-                    foreach (Transform sib in dst.parent)
-                        if (sib != dst && sib.name.StartsWith(prefix)) t.Dst.Add(sib);
-                }
-                a.Tracks.Add(t);
+                a.Tracks.Add(new Track { Path = RelPath(body, d), Src = d });
             }
+            // Visual-only copy, created under the inactive stage so none of its scripts wake up.
+            BuildClone(a, body);
 
             // Mesh bounds in car_body space, for camera framing.
             bool first = true;
@@ -253,6 +280,7 @@ namespace RaceBoot
             foreach (var t in a.Tracks)
                 for (int i = 0; i < n0; i++) { t.P.Add(Pos(t)); t.R.Add(Rot(t)); }
             for (int i = 0; i < n0; i++) a.Visible.Add(false);
+            AddFx(a, body);
             rec.Actors.Add(a);
         }
 
@@ -274,9 +302,7 @@ namespace RaceBoot
             Kill<AudioListener>();
             Kill<Animator>();
             Kill<Camera>();
-            Kill<ParticleSystem>();
-            Kill<ParticleSystemRenderer>();
-            Kill<TrailRenderer>();
+            // Particle systems and trails are kept: the effects are replayed (ReplayFx).
             foreach (var r in g.GetComponentsInChildren<Renderer>(true))
             {
                 if (r.name == "car_collider") { r.enabled = false; continue; }
@@ -297,6 +323,7 @@ namespace RaceBoot
             {
                 a.Visible.Add(a.Src && a.Src!.gameObject.activeInHierarchy);
                 foreach (var t in a.Tracks) { t.P.Add(Pos(t)); t.R.Add(Rot(t)); }
+                SampleFx(a, rec.Times.Count - 1);
             }
         }
 
@@ -304,7 +331,9 @@ namespace RaceBoot
         {
             recording = false;
             if (rec == null) return;
-            foreach (var a in rec.Actors) { a.Src = null; foreach (var t in a.Tracks) t.Src = null; }
+            int fxCount = 0;
+            foreach (var a in rec.Actors) { a.Src = null; foreach (var t in a.Tracks) t.Src = null; TrimFx(a); fxCount += a.Fx.Count; }
+            Debug.Log("[RaceBoot] replay: " + fxCount + " recorded effects");
             float travelled = 0f;
             var pt = rec.Actors.Count > 0 ? rec.Actors[0].Tracks[0].P : null;
             if (pt != null) for (int i = 1; i < pt.Count; i++) travelled += Vector3.Distance(pt[i - 1], pt[i]);
@@ -313,6 +342,172 @@ namespace RaceBoot
             if (last != null) Discard(last);
             last = rec;
             rec = null;
+            autoPending = true;
+            Save(last);
+        }
+
+        // ---------------- saved replay (F9) ----------------
+        // The last recording is written next to the executable, so that it can be watched again at any time
+        // on the "PRESS START" screen with F9, even after a restart, without racing again.
+
+        static string SavePath => Path.Combine(Application.dataPath, "..", "last_replay.rbr");
+        const int FileVersion = 2;   // 2: effects
+
+        static void Save(Recording r)
+        {
+            // The recording is complete and no longer changes: written in the background to avoid a hitch.
+            Task.Run(() =>
+            {
+                try
+                {
+                    var tmp = SavePath + ".tmp";
+                    using (var w = new BinaryWriter(File.Create(tmp)))
+                    {
+                        w.Write("RBRP"); w.Write(FileVersion);
+                        w.Write(r.Start);
+                        w.Write(r.Hood.HasValue); W(w, r.Hood ?? Vector3.zero);
+                        w.Write(r.Times.Count); foreach (var t in r.Times) w.Write(t);
+                        w.Write(r.Actors.Count);
+                        foreach (var a in r.Actors)
+                        {
+                            w.Write(a.Name); w.Write(a.Player); W(w, a.Scale); W(w, a.Bounds.center); W(w, a.Bounds.size);
+                            foreach (var v in a.Visible) w.Write(v);
+                            w.Write(a.Tracks.Count);
+                            foreach (var t in a.Tracks)
+                            {
+                                w.Write(t.Path); w.Write(t.World);
+                                for (int i = 0; i < r.Times.Count; i++)
+                                {
+                                    W(w, t.P[i]);
+                                    var q = t.R[i]; w.Write(q.x); w.Write(q.y); w.Write(q.z); w.Write(q.w);
+                                }
+                            }
+                            WriteFx(w, a);
+                        }
+                    }
+                    if (File.Exists(SavePath)) File.Delete(SavePath);
+                    File.Move(tmp, SavePath);
+                }
+                catch (Exception e) { Debug.Log("[RaceBoot] replay: save failed: " + e.Message); }
+            });
+        }
+
+        static void W(BinaryWriter w, Vector3 v) { w.Write(v.x); w.Write(v.y); w.Write(v.z); }
+        static Vector3 V(BinaryReader r) => new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+
+        Recording? Load()
+        {
+            if (!File.Exists(SavePath)) { Debug.Log("[RaceBoot] replay: no saved replay"); return null; }
+            var rec = new Recording();
+            try
+            {
+                using (var rd = new BinaryReader(File.OpenRead(SavePath)))
+                {
+                    if (rd.ReadString() != "RBRP") return null;
+                    int version = rd.ReadInt32();
+                    if (version < 1 || version > FileVersion) return null;
+                    rec.Start = rd.ReadSingle();
+                    bool hasHood = rd.ReadBoolean(); var hood = V(rd); if (hasHood) rec.Hood = hood;
+                    int n = rd.ReadInt32();
+                    for (int i = 0; i < n; i++) rec.Times.Add(rd.ReadSingle());
+                    int actors = rd.ReadInt32();
+                    for (int k = 0; k < actors; k++)
+                    {
+                        var a = new Actor { Name = rd.ReadString(), Player = rd.ReadBoolean(), Scale = V(rd) };
+                        var c = V(rd); a.Bounds = new Bounds(c, V(rd));
+                        for (int i = 0; i < n; i++) a.Visible.Add(rd.ReadBoolean());
+                        int tracks = rd.ReadInt32();
+                        for (int m = 0; m < tracks; m++)
+                        {
+                            var t = new Track { Path = rd.ReadString(), World = rd.ReadBoolean() };
+                            for (int i = 0; i < n; i++)
+                            {
+                                t.P.Add(V(rd));
+                                t.R.Add(new Quaternion(rd.ReadSingle(), rd.ReadSingle(), rd.ReadSingle(), rd.ReadSingle()));
+                            }
+                            a.Tracks.Add(t);
+                        }
+                        if (version >= 2) ReadFx(rd, a);
+                        rec.Actors.Add(a);
+                    }
+                }
+            }
+            catch (Exception e) { Debug.Log("[RaceBoot] replay: load failed: " + e.Message); return null; }
+            if (rec.Times.Count < 2 || rec.Actors.Count == 0) return null;
+
+            // Visual copies made from the cars of the title scene (the same models as in the race).
+            EnsureStage();
+            var bodies = new Dictionary<string, Transform>();
+            Transform? anyAi = null;
+            foreach (var rb in FindObjectsOfType<Rigidbody>())
+            {
+                if (!rb.name.StartsWith("AI_car")) continue;
+                var b = rb.transform.Find("car_body");
+                if (!b) continue;
+                bodies[rb.name] = b!;
+                if (!anyAi) anyAi = b;
+            }
+            foreach (var a in rec.Actors)
+            {
+                Transform? body = a.Player ? (PlayerBody() ?? AnyPlayerBody() ?? anyAi) : (bodies.TryGetValue(a.Name, out var b) ? b : anyAi);
+                if (body) BuildClone(a, body!);
+            }
+            Debug.Log($"[RaceBoot] replay: loaded {rec.Duration:F1} s, {rec.Actors.Count} cars");
+            return rec;
+        }
+
+        // The player's car is inactive on the title screen: GameObject.Find does not see it.
+        static Transform? AnyPlayerBody()
+        {
+            foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+                if (t.name == "car_body" && t.parent && t.parent.name == "race_car_01" && t.gameObject.scene.isLoaded) return t;
+            return null;
+        }
+
+        void EnsureStage()
+        {
+            if (stage) return;
+            stage = new GameObject("RaceBootReplayStage");
+            DontDestroyOnLoad(stage);
+            stage.SetActive(false);
+        }
+
+        // Visual-only copy of a car and the transforms each track drives.
+        void BuildClone(Actor a, Transform body)
+        {
+            var clone = Instantiate(body.gameObject, stage!.transform);
+            clone.name = "Replay " + a.Name;
+            clone.transform.localScale = a.Scale;   // the stage has no scale
+            Strip(clone);
+            a.Clone = clone;
+            foreach (var t in a.Tracks)
+            {
+                t.Dst.Clear();
+                if (t.World) { t.Dst.Add(clone.transform); continue; }
+                var dst = clone.transform.Find(t.Path);
+                if (!dst) continue;
+                t.Dst.Add(dst!);
+                // LOD1 drives its LOD2 / LOD3 siblings too.
+                string n = dst!.name;
+                if (n.EndsWith("LOD1") && dst.parent)
+                {
+                    string prefix = n.Substring(0, n.Length - 4);
+                    foreach (Transform sib in dst.parent)
+                        if (sib != dst && sib.name.StartsWith(prefix)) t.Dst.Add(sib);
+                }
+            }
+        }
+
+        // F9 on the "PRESS START" screen: (re)starts the last replay, from memory or from the saved file.
+        void DebugPlay()
+        {
+            string st = RaceState();
+            if (recording || (st != "skip?" && st != "play_intro")) return;
+            if (playing) StopPlayback();
+            if (last == null) last = Load();
+            if (last == null) return;
+            forced = true;
+            StartPlayback();
         }
 
         static void Discard(Recording r)
@@ -332,24 +527,27 @@ namespace RaceBoot
 
         // The real cars stay in the title scene (the AI cars live in a DontDestroyOnLoad pool, the player's car
         // waits on the grid): parked and motionless, they would show up in the replay next to their copies.
+        // forceRenderingOff rather than enabled: the game switches the renderers of its cars on and off itself
+        // (and re-activates pooled cars), which made real cars pop up over the replay for a moment. Inactive
+        // cars are covered too, so they stay hidden if the game brings them back.
         void HideRealCars()
         {
-            nextHide = Time.unscaledTime + 0.5f;
+            nextHide = Time.unscaledTime + 0.25f;
             var roots = new List<Transform>();
-            foreach (var rb in FindObjectsOfType<Rigidbody>())
-                if (rb.name.StartsWith("AI_car")) roots.Add(rb.transform);
-            var player = GameObject.Find("race_car_01");
-            if (player) roots.Add(player.transform);
+            foreach (var rb in Resources.FindObjectsOfTypeAll<Rigidbody>())
+                if (rb && rb.name.StartsWith("AI_car") && rb.gameObject.scene.IsValid()) roots.Add(rb.transform);
+            foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+                if (t && t.name == "race_car_01" && t.gameObject.scene.isLoaded) roots.Add(t);
             int before = hidden.Count;
             foreach (var root in roots)
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true))
-                    if (r.enabled && !r.transform.IsChildOf(stage!.transform)) { r.enabled = false; hidden.Add(r); }
+                    if (!r.forceRenderingOff && !r.transform.IsChildOf(stage!.transform)) { r.forceRenderingOff = true; hidden.Add(r); }
             if (hidden.Count != before) Debug.Log($"[RaceBoot] replay: hid {hidden.Count - before} renderers of {roots.Count} real cars");
         }
 
         void ShowRealCars()
         {
-            foreach (var r in hidden) if (r) r.enabled = true;
+            foreach (var r in hidden) if (r) r.forceRenderingOff = false;
             hidden.Clear();
         }
 
@@ -358,6 +556,8 @@ namespace RaceBoot
             if (last == null) return;
             playing = true;
             t = last.Start; cursor = 0; startedAt = Time.unscaledTime;
+            fxFrame = -1;
+            foreach (var a in last.Actors) if (a.Clone) LinkFx(a, a.Clone!);
             stage!.SetActive(true);
 
             // Parts of the track are hidden on the title screen.
@@ -379,13 +579,23 @@ namespace RaceBoot
             foreach (var cv in Resources.FindObjectsOfTypeAll<Canvas>())
                 if (cv.name == "press_start_canvas" && cv.gameObject.scene.isLoaded) pressStart = cv;
 
+            // Arcade attract sequence: the replay runs without "PRESS START"; START / throttle shows GAME OVER,
+            // then the normal "PRESS START" screen. The race manager is held so the key does not start a race.
+            pressStartCam = pressStart ? pressStart!.worldCamera : null;
+            pressStartWasActive = pressStart && pressStart!.gameObject.activeSelf;
+            if (pressStartWasActive) pressStart!.gameObject.SetActive(false);
+            if (raceManager) { raceManager!.enabled = false; heldManager = raceManager; }
+            armedAt = Time.unscaledTime + 1f;
+            gameOverUntil = 0f;
+            pressedForTest = false;
+
             HideRealCars();
             director = new Director(last, this);
             Debug.Log($"[RaceBoot] replay: playing {last.Duration:F1} s");
         }
 
         // URP camera settings (post-processing, anti-aliasing…) live on a separate component.
-        static void CopyUrpData(Camera from, Camera to)
+        internal static void CopyUrpData(Camera from, Camera to)
         {
             Component? src = null;
             foreach (var c in from.GetComponents<Component>()) if (c && c.GetType().Name == "UniversalAdditionalCameraData") src = c;
@@ -403,6 +613,15 @@ namespace RaceBoot
         void StopPlayback()
         {
             playing = false;
+            forced = false;
+            HideGameOver();
+            gameOverUntil = 0f;
+            // The canvases go back to the game's camera (ours is destroyed below).
+            if (pressStart) pressStart!.worldCamera = pressStartCam;
+            if (pressStart && pressStartWasActive) pressStart!.gameObject.SetActive(true);
+            pressStartWasActive = false;
+            if (heldManager) heldManager!.enabled = true;
+            heldManager = null;
             if (stage) stage!.SetActive(false);
             if (cam) Destroy(cam!.gameObject);
             cam = null;
@@ -424,8 +643,162 @@ namespace RaceBoot
 
             // Only our camera renders; the title screen's "PRESS START" canvas is drawn through it.
             foreach (var c in Camera.allCameras)
-                if (c != cam && c.targetTexture == null) { c.enabled = false; muted.Add(c); }
+                if (c != cam && c.targetTexture == null && c.name != FreeCam.CameraName) { c.enabled = false; muted.Add(c); }
             if (pressStart && pressStart!.renderMode == RenderMode.ScreenSpaceCamera) pressStart.worldCamera = cam;
+            if (gpCanvas && gpCanvas!.renderMode == RenderMode.ScreenSpaceCamera) gpCanvas.worldCamera = cam;
+
+            if (gameOverUntil > 0f)
+            {
+                if (dim) dim!.color = new Color(0f, 0f, 0f, 0.62f * Mathf.Clamp01((Time.unscaledTime - gameOverAt) / 0.35f));
+                // Back to "PRESS START", opened by the game's dots transition.
+                if (Time.unscaledTime >= gameOverUntil) { StopPlayback(); TransitionIn(); }
+            }
+            else if (Pressed() && Time.unscaledTime >= armedAt) ShowGameOver();
+        }
+
+        // ---------------- arcade sequence ----------------
+
+        MonoBehaviour? heldManager;
+        bool pressStartWasActive, pressedForTest, gpCanvasWasActive;
+        float armedAt, gameOverUntil, lastThrottle;
+        Canvas? gpCanvas;
+        Camera? pressStartCam, gpCanvasCam;
+        UnityEngine.UI.Image? dim;
+        GameObject? dimCanvas;
+        float gameOverAt;
+        bool transitionFired;
+        public static float TransitionLead = 0.3f;
+        GameObject? gameOver;
+
+        bool Pressed()
+        {
+            if (pressedForTest) { pressedForTest = false; return true; }
+            if (!ReInput.isReady) return false;
+            var p = ReInput.players.GetPlayer(0);
+            if (p == null) return false;
+            float throttle = p.GetAxis("handgun");
+            bool rising = throttle > 0.5f && lastThrottle <= 0.5f;
+            lastThrottle = throttle;
+            return p.GetButtonDown("start") || p.GetButtonDown("menu next") || rising;
+        }
+
+        // The game's own "GAME OVER" (90sGP_canvas/game over, animated by its "game_over" FSM).
+        void ShowGameOver()
+        {
+            gameOverUntil = Time.unscaledTime + 3f + TransitionLead;
+            gameOver = null;
+            foreach (var tr in Resources.FindObjectsOfTypeAll<Transform>())
+                if (tr.name == "game over" && tr.parent && tr.parent.name == "90sGP_canvas" && tr.gameObject.scene.isLoaded) { gameOver = tr.gameObject; break; }
+            if (!gameOver) { Debug.Log("[RaceBoot] replay: no game over screen"); return; }
+            var canvasGo = gameOver!.transform.parent.gameObject;
+            gpCanvas = canvasGo.GetComponent<Canvas>();
+            gpCanvasCam = gpCanvas ? gpCanvas!.worldCamera : null;
+            gpCanvasWasActive = canvasGo.activeSelf;
+            if (!gpCanvasWasActive) canvasGo.SetActive(true);
+            // Only the GAME OVER block of the race canvas.
+            foreach (Transform ch in canvasGo.transform)
+                if (ch.gameObject != gameOver && ch.gameObject.activeSelf) { ch.gameObject.SetActive(false); hiddenUi.Add(ch.gameObject); }
+            // Dark veil: its own canvas, drawn by the replay camera just behind the race canvas.
+            var dimGo = new GameObject("RaceBootGameOverDim");
+            dimGo.transform.SetParent(stage!.transform, false);
+            dimGo.layer = canvasGo.layer;
+            var dc = dimGo.AddComponent<Canvas>();
+            dc.renderMode = RenderMode.ScreenSpaceCamera;
+            dc.worldCamera = cam;
+            // The race canvas is usually an overlay (drawn over everything): the veil sits right in front of
+            // the camera. When it is a camera canvas, the veil goes just behind it.
+            bool camCanvas = gpCanvas && gpCanvas!.renderMode == RenderMode.ScreenSpaceCamera;
+            dc.planeDistance = camCanvas ? gpCanvas!.planeDistance + 0.05f : cam!.nearClipPlane + 0.05f;
+            Debug.Log($"[RaceBoot] replay: game over canvas {(gpCanvas ? gpCanvas!.renderMode.ToString() : "none")}");
+            if (gpCanvas) { dc.sortingLayerID = gpCanvas!.sortingLayerID; dc.sortingOrder = gpCanvas.sortingOrder - 1; }
+            var imgGo = new GameObject("veil", typeof(RectTransform));
+            imgGo.layer = canvasGo.layer;
+            imgGo.transform.SetParent(dimGo.transform, false);
+            var drt = (RectTransform)imgGo.transform;
+            drt.anchorMin = Vector2.zero; drt.anchorMax = Vector2.one;
+            drt.offsetMin = drt.offsetMax = Vector2.zero;
+            dimCanvas = dimGo;
+            dim = imgGo.AddComponent<UnityEngine.UI.Image>();
+            dim.color = new Color(0f, 0f, 0f, 0f);
+            dim.raycastTarget = false;
+            gameOverAt = Time.unscaledTime;
+            transitionFired = false;
+            gameOver.SetActive(true);
+            Debug.Log("[RaceBoot] replay: game over");
+        }
+
+        readonly List<GameObject> hiddenUi = new List<GameObject>();
+
+        // The game's halftone dots transition (T2_Transitioner, FSM "transition out").
+        // The transition draws on Camera.main (the camera tagged "MainCamera").
+        static object? Transitioner()
+        {
+            var tp = Type.GetType("Transitioner, Assembly-CSharp");
+            return tp?.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null);
+        }
+
+        // Makes `c` the only camera tagged "MainCamera" (Camera.main); returns the tags to put back.
+        static List<KeyValuePair<Camera, string>> MakeMain(Camera c)
+        {
+            var saved = new List<KeyValuePair<Camera, string>>();
+            foreach (var o in Resources.FindObjectsOfTypeAll<Camera>())
+                if (o && o.gameObject.scene.IsValid() && (o == c || o.CompareTag("MainCamera")))
+                {
+                    saved.Add(new KeyValuePair<Camera, string>(o, o.tag));
+                    o.tag = o == c ? "MainCamera" : "Untagged";
+                }
+            return saved;
+        }
+
+        static void RestoreTags(List<KeyValuePair<Camera, string>> saved)
+        {
+            foreach (var kv in saved) if (kv.Key) kv.Key.tag = kv.Value;
+        }
+
+        void FireTransition()
+        {
+            var tr = Transitioner();
+            if (tr == null || !cam) { Debug.Log("[RaceBoot] replay: no transition"); return; }
+            // Camera.main is read by the transition coroutine a few frames later: the tag stays until the switch.
+            outTags = MakeMain(cam!);
+            tr.GetType().GetMethod("TransitionOutWithoutChangingScene")?.Invoke(tr, null);
+            Debug.Log("[RaceBoot] replay: transition out, main = " + (Camera.main ? Camera.main!.name : "none"));
+        }
+
+        System.Collections.IEnumerator Restore(List<KeyValuePair<Camera, string>> saved, float delay)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+            RestoreTags(saved);
+        }
+
+        // Back on the title screen: the dots open on the "PRESS START" camera.
+        List<KeyValuePair<Camera, string>>? outTags;
+
+        void TransitionIn()
+        {
+            if (outTags != null) { RestoreTags(outTags); outTags = null; }
+            Camera? title = null;
+            foreach (var c in Camera.allCameras)
+                if (c.targetTexture == null && c.cullingMask != 32 && c.name != FreeCam.CameraName && c.name != "debug_camera" && (!title || c.depth > title!.depth)) title = c;
+            var tr = Transitioner();
+            if (tr == null || !title) return;
+            var saved = MakeMain(title!);
+            tr.GetType().GetMethod("TransitionInWithoutChangingScene")?.Invoke(tr, null);
+            StartCoroutine(Restore(saved, 1.5f));
+            Debug.Log("[RaceBoot] replay: transition in on " + title!.name);
+        }
+
+        void HideGameOver()
+        {
+            if (dimCanvas) Destroy(dimCanvas!);
+            dimCanvas = null;
+            dim = null;
+            if (gameOver) gameOver!.SetActive(false);
+            foreach (var g in hiddenUi) if (g) g.SetActive(true);
+            hiddenUi.Clear();
+            if (gpCanvas) gpCanvas!.worldCamera = gpCanvasCam;
+            if (gpCanvas && !gpCanvasWasActive) gpCanvas!.gameObject.SetActive(false);
+            gameOver = null; gpCanvas = null;
         }
 
         void Apply(float time)
@@ -455,6 +828,7 @@ namespace RaceBoot
                     }
                 }
             }
+            StepFx(r, i);
         }
 
         static void PoseAt(Recording r, Actor a, float time, out Vector3 pos, out Quaternion rot)
@@ -547,6 +921,8 @@ namespace RaceBoot
                 }
 
 
+                if (shot != Shot.Hood && t > shotStart + 0.5f && !r.SegmentInside(camPos, pivot, 5f)) shotEnd = t;
+
                 var q = fixedRot ?? Quaternion.LookRotation((look - camPos).sqrMagnitude > 1e-4f ? look - camPos : f, Vector3.up);
                 cam!.transform.SetPositionAndRotation(camPos, q);
                 cam.fieldOfView = fov;
@@ -603,6 +979,7 @@ namespace RaceBoot
                         return false;
                     if (Physics.Linecast(p + off, pivot, ~0, QueryTriggerInteraction.Ignore)) return false;
                     if (Physics.CheckSphere(p + off, 0.4f, ~0, QueryTriggerInteraction.Ignore)) return false;
+                    if (!r.SegmentInside(pivot, p + off, 4f)) return false;
                 }
                 return true;
             }
@@ -630,7 +1007,8 @@ namespace RaceBoot
                     float tf = TimeAhead(t, Random.Range(35f, 70f));
                     PoseAt(r, player, tf, out var p, out var q);
                     float s = Random.value < 0.5f ? -1f : 1f;
-                    var cand = p + q * Vector3.right * s * Random.Range(6f, 12f) + Vector3.up * Random.Range(1.2f, 4.5f) + q * Vector3.forward * Random.Range(0f, 10f);
+                    var cand = p + q * Vector3.right * s * Random.Range(4f, 9f) + Vector3.up * Random.Range(1.2f, 4.5f) + q * Vector3.forward * Random.Range(0f, 10f);
+                    if (!r.Inside(cand, 3f)) { why.Append(" off-road"); continue; }
                     var inside = Physics.OverlapSphere(cand, 0.6f, ~0, QueryTriggerInteraction.Ignore);
                     if (inside.Length > 0) { why.Append(" in:" + inside[0].name); continue; }
                     bool clear = true;
@@ -639,6 +1017,7 @@ namespace RaceBoot
                         PoseAt(r, player, t + k, out var pk, out _);
                         if (k > 1f && Vector3.Distance(pk, cand) > 95f) break;
                         if (Physics.Linecast(cand, pk + Vector3.up * 1.0f, out var hit, ~0, QueryTriggerInteraction.Ignore)) { clear = false; why.Append(" los:" + hit.collider.name); }
+                        else if (!r.SegmentInside(cand, pk, 5f)) { clear = false; why.Append(" corridor"); }
                     }
                     if (!clear) continue;
                     tvPos = cand;
@@ -654,6 +1033,8 @@ namespace RaceBoot
 
         void OnGUI()
         {
+            var e = Event.current;
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.F9) { DebugPlay(); e.Use(); }
             if (!playing) return;
             float s = Mathf.Max(0.75f, Screen.height / 1080f);
             if (style == null)
@@ -661,12 +1042,13 @@ namespace RaceBoot
                 style = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperLeft };
                 shadow = new GUIStyle(style);
             }
-            style.fontSize = shadow!.fontSize = Mathf.RoundToInt(46 * s);
+            if (gameOverUntil > 0f) return;
+            style.fontSize = shadow!.fontSize = Mathf.RoundToInt(26 * s);
             bool blink = ((Time.unscaledTime - startedAt) % 1.2f) < 0.8f;
             style.normal.textColor = new Color(1f, 0.15f, 0.1f, blink ? 1f : 0.35f);
             shadow.normal.textColor = new Color(0f, 0f, 0f, blink ? 0.8f : 0.3f);
-            var rect = new Rect(40 * s, 30 * s, 600 * s, 80 * s);
-            GUI.Label(new Rect(rect.x + 3 * s, rect.y + 3 * s, rect.width, rect.height), "● REPLAY", shadow);
+            var rect = new Rect(28 * s, 20 * s, 400 * s, 50 * s);
+            GUI.Label(new Rect(rect.x + 2 * s, rect.y + 2 * s, rect.width, rect.height), "● REPLAY", shadow);
             GUI.Label(rect, "● REPLAY", style);
         }
     }

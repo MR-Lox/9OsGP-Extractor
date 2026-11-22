@@ -135,9 +135,9 @@ namespace RaceBoot
         {
             if (!ReInput.isReady) return;
             var joys = ReInput.controllers.Joysticks;
-            if (joys.Count == 0) { GUILayout.Label("Aucun volant / contrôleur détecté. Branchez-le puis rouvrez ce menu.", label); return; }
+            if (joys.Count == 0) { GUILayout.Label(L.T("Aucun volant / contrôleur détecté. Branchez-le puis rouvrez ce menu."), label); return; }
 
-            GUILayout.Label("Périphérique", header);
+            GUILayout.Label(L.T("Périphérique"), header);
             GUILayout.BeginHorizontal();
             foreach (var x in joys)
                 if (GUILayout.Button(x.hardwareName, x.id == selected ? on : button, GUILayout.Height(36 * s))) { selected = x.id; step = 0; }
@@ -145,22 +145,22 @@ namespace RaceBoot
             var j = Selected();
             if (j == null) return;
             bool isConfigured = Configured && (j.hardwareName == Device || j.name == Device);
-            GUILayout.Label(isConfigured ? "Configuré pour ce périphérique." : "Pas encore configuré : lancez l'assistant.", small);
+            GUILayout.Label(isConfigured ? L.T("Configuré pour ce périphérique.") : L.T("Pas encore configuré : lancez l'assistant."), small);
             GUILayout.Space(8 * s);
 
             if (step == 0)
             {
-                if (GUILayout.Button(isConfigured ? "Relancer l'assistant de configuration" : "Lancer l'assistant de configuration", on, GUILayout.Height(44 * s)))
+                if (GUILayout.Button(isConfigured ? L.T("Relancer l'assistant de configuration") : L.T("Lancer l'assistant de configuration"), on, GUILayout.Height(44 * s)))
                     step = 1;
             }
             else DrawWizard(j, s, header, label, small, button, on);
 
             GUILayout.Space(10 * s);
-            GUILayout.Label("Axes en direct", header);
+            GUILayout.Label(L.T("Axes en direct"), header);
             for (int i = 0; i < j.axisCount; i++)
             {
                 GUILayout.BeginHorizontal();
-                string role = i == SteerAxis && isConfigured ? " (direction)" : i == AccelAxis && isConfigured ? " (accélérateur)" : i == BrakeAxis && isConfigured ? " (frein)" : "";
+                string role = i == SteerAxis && isConfigured ? L.T(" (direction)") : i == AccelAxis && isConfigured ? L.T(" (accélérateur)") : i == BrakeAxis && isConfigured ? L.T(" (frein)") : "";
                 GUILayout.Label(j.AxisElementIdentifiers[i].name + role, small, GUILayout.Width(300 * s));
                 GUILayout.HorizontalSlider(Raw(j, i), -1f, 1f, GUILayout.Height(24 * s));
                 GUILayout.EndHorizontal();
@@ -169,15 +169,15 @@ namespace RaceBoot
             if (isConfigured)
             {
                 GUILayout.Space(10 * s);
-                GUILayout.Label("Réglages", header);
-                float sens = SliderRow("Sensibilité de la direction", SteerSens, 1f, 4f, label, s);
-                float dz = SliderRow("Zone morte des pédales", PedalDeadZone, 0f, 0.2f, label, s);
+                GUILayout.Label(L.T("Réglages"), header);
+                float sens = SliderRow(L.T("Sensibilité de la direction"), SteerSens, 1f, 4f, label, s);
+                float dz = SliderRow(L.T("Zone morte des pédales"), PedalDeadZone, 0f, 0.2f, label, s);
                 if (Math.Abs(sens - SteerSens) > 1e-4f || Math.Abs(dz - PedalDeadZone) > 1e-4f) { SteerSens = sens; PedalDeadZone = dz; Apply(); }
-                GUILayout.Label("Sensibilité 1 = braquage maximal à fond de volant ; 2 = à mi-course (utile pour les volants 900°).", small);
+                GUILayout.Label(L.T("Sensibilité 1 = braquage maximal à fond de volant ; 2 = à mi-course (utile pour les volants 900°)."), small);
                 GUILayout.Space(6 * s);
                 bool v = SteerInvert;
-                if (ToggleRow("Inverser la direction", ref v, label, button, on, s)) { SteerInvert = v; Apply(); }
-                if (GUILayout.Button("Oublier ce volant", button, GUILayout.Height(38 * s)))
+                if (ToggleRow(L.T("Inverser la direction"), ref v, label, button, on, s)) { SteerInvert = v; Apply(); }
+                if (GUILayout.Button(L.T("Oublier ce volant"), button, GUILayout.Height(38 * s)))
                 {
                     var player = ReInput.players.GetPlayer(0);
                     player?.controllers.maps.GetMap(ControllerType.Joystick, j.id, 0, 0)?.ClearElementMaps();
@@ -188,15 +188,15 @@ namespace RaceBoot
             }
 
             GUILayout.Space(14 * s);
-            GUILayout.Label("Retour de force", header);
+            GUILayout.Label(L.T("Retour de force"), header);
             bool ffb = Settings.Ffb;
-            if (ToggleRow("Activer le retour de force", ref ffb, label, button, on, s)) Settings.Ffb = ffb;
-            Settings.FfbStrength = SliderRow("Force générale", Settings.FfbStrength, 0f, 1f, label, s);
-            Settings.FfbCentering = SliderRow("Rappel au centre", Settings.FfbCentering, 0f, 1f, label, s);
-            Settings.FfbEffects = SliderRow("Glisse et chocs", Settings.FfbEffects, 0f, 1f, label, s);
+            if (ToggleRow(L.T("Activer le retour de force"), ref ffb, label, button, on, s)) Settings.Ffb = ffb;
+            Settings.FfbStrength = SliderRow(L.T("Force générale"), Settings.FfbStrength, 0f, 1f, label, s);
+            Settings.FfbCentering = SliderRow(L.T("Rappel au centre"), Settings.FfbCentering, 0f, 1f, label, s);
+            Settings.FfbEffects = SliderRow(L.T("Glisse et chocs"), Settings.FfbEffects, 0f, 1f, label, s);
             bool inv = Settings.FfbInvert;
-            if (ToggleRow("Inverser le sens des forces", ref inv, label, button, on, s)) Settings.FfbInvert = inv;
-            GUILayout.Label("État : " + Ffb.Status, small);
+            if (ToggleRow(L.T("Inverser le sens des forces"), ref inv, label, button, on, s)) Settings.FfbInvert = inv;
+            GUILayout.Label(L.T("État : ") + Ffb.Status, small);
         }
 
         static void DrawWizard(Joystick j, float s, GUIStyle header, GUIStyle label, GUIStyle small, GUIStyle button, GUIStyle on)
@@ -209,14 +209,14 @@ namespace RaceBoot
 
             if (step == 1)
             {
-                title = "1/6 — Position de repos";
-                hint = "Volant au centre, pieds levés des pédales, puis cliquez sur Valider.";
+                title = L.T("1/6 — Position de repos");
+                hint = L.T("Volant au centre, pieds levés des pédales, puis cliquez sur Valider.");
                 canValidate = true;
             }
             else if (step >= 2 && step <= 4)
             {
-                title = step == 2 ? "2/6 — Tournez le volant à fond vers la DROITE" : step == 3 ? "3/6 — Enfoncez l'ACCÉLÉRATEUR à fond" : "4/6 — Enfoncez le FREIN à fond";
-                hint = "Maintenez la position, puis cliquez sur Valider.";
+                title = step == 2 ? L.T("2/6 — Tournez le volant à fond vers la DROITE") : step == 3 ? L.T("3/6 — Enfoncez l'ACCÉLÉRATEUR à fond") : L.T("4/6 — Enfoncez le FREIN à fond");
+                hint = L.T("Maintenez la position, puis cliquez sur Valider.");
                 float bestDelta = 0f;
                 for (int i = 0; i < n; i++)
                 {
@@ -229,12 +229,12 @@ namespace RaceBoot
                 }
                 canValidate = best >= 0 && bestDelta > 0.4f;
                 canSkip = step == 4;
-                hint += canValidate ? "   Détecté : " + j.AxisElementIdentifiers[best].name : "   (en attente d'un mouvement…)";
+                hint += canValidate ? L.T("   Détecté : ") + j.AxisElementIdentifiers[best].name : L.T("   (en attente d'un mouvement…)");
             }
             else if (step == 5 || step == 6)
             {
-                title = step == 5 ? "5/6 — Bouton « changer de vue »" : "6/6 — Bouton « menu des options »";
-                hint = "Appuyez sur le bouton du volant à utiliser, ou cliquez sur Passer.";
+                title = step == 5 ? L.T("5/6 — Bouton « changer de vue »") : L.T("6/6 — Bouton « menu des options »");
+                hint = L.T("Appuyez sur le bouton du volant à utiliser, ou cliquez sur Passer.");
                 canSkip = true;
                 for (int b = 0; b < j.buttonCount; b++)
                     if (j.GetButtonDown(b))
@@ -249,10 +249,10 @@ namespace RaceBoot
             GUILayout.Label(hint, label);
             GUILayout.BeginHorizontal();
             GUI.enabled = canValidate;
-            if (step <= 4 && GUILayout.Button("Valider", on, GUILayout.Height(42 * s))) Next(j, best);
+            if (step <= 4 && GUILayout.Button(L.T("Valider"), on, GUILayout.Height(42 * s))) Next(j, best);
             GUI.enabled = true;
-            if (canSkip && GUILayout.Button("Passer", button, GUILayout.Height(42 * s))) Next(j, -1);
-            if (GUILayout.Button("Annuler", button, GUILayout.Height(42 * s), GUILayout.Width(160 * s))) step = 0;
+            if (canSkip && GUILayout.Button(L.T("Passer"), button, GUILayout.Height(42 * s))) Next(j, -1);
+            if (GUILayout.Button(L.T("Annuler"), button, GUILayout.Height(42 * s), GUILayout.Width(160 * s))) step = 0;
             GUILayout.EndHorizontal();
         }
 
@@ -305,8 +305,8 @@ namespace RaceBoot
             GUILayout.BeginHorizontal();
             GUILayout.Label(name, label, GUILayout.Height(36 * s));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Oui", v ? on : button, GUILayout.Width(100 * s), GUILayout.Height(36 * s))) v = true;
-            if (GUILayout.Button("Non", !v ? on : button, GUILayout.Width(100 * s), GUILayout.Height(36 * s))) v = false;
+            if (GUILayout.Button(L.T("Oui"), v ? on : button, GUILayout.Width(100 * s), GUILayout.Height(36 * s))) v = true;
+            if (GUILayout.Button(L.T("Non"), !v ? on : button, GUILayout.Width(100 * s), GUILayout.Height(36 * s))) v = false;
             GUILayout.EndHorizontal();
             return v != old;
         }

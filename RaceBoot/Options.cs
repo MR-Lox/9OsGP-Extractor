@@ -28,6 +28,9 @@ namespace RaceBoot
         public static float HudInfoY = 0f, GaugeX = 0f, GaugeY = 0f, GaugeScale = 1f;
         public static bool Ffb = true, FfbInvert;
         public static bool ReplayEnabled = true;
+        public static bool IntroEnabled = true;
+        public static float VolMaster = 1f, VolMusic = 1f, VolEngine = 1f, VolFx = 1f;
+        public static string Soundtrack = GameAudio.Original;
         public static float FfbStrength = 0.7f, FfbCentering = 0.6f, FfbEffects = 0.6f;
         public static HashSet<string> HudHidden = new HashSet<string> { "Minimap" };
         public static bool HudShown(string key) => !HudHidden.Contains(key);
@@ -39,6 +42,7 @@ namespace RaceBoot
         {
             Width = Screen.currentResolution.width;
             Height = Screen.currentResolution.height;
+            L.Code = L.Default();
             if (!File.Exists(FilePath)) return;
             foreach (var line in File.ReadAllLines(FilePath))
             {
@@ -50,6 +54,7 @@ namespace RaceBoot
                 bool b = v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase);
                 switch (k)
                 {
+                    case "Language": if (Array.IndexOf(L.Codes, v) >= 0) L.Code = v; break;
                     case "DisplayMode": DisplayMode = Mathf.Clamp(n, 0, 2); break;
                     case "Width": if (n > 0) Width = n; break;
                     case "Height": if (n > 0) Height = n; break;
@@ -75,6 +80,13 @@ namespace RaceBoot
                     case "GaugeScale": if (fl > 0.1f) GaugeScale = fl; break;
                     case "Ffb": Ffb = b; break;
                     case "Replay": ReplayEnabled = b; break;
+                    case "Intro": IntroEnabled = b; break;
+                    case "VolMaster": VolMaster = Mathf.Clamp01(fl); break;
+                    case "VolMusic": VolMusic = Mathf.Clamp01(fl); break;
+                    case "VolEngine": VolEngine = Mathf.Clamp01(fl); break;
+                    case "VolFx": VolFx = Mathf.Clamp01(fl); break;
+                    case "Soundtrack": Soundtrack = v; break;
+                    case "RaceCam": Arcade.LoadPose(v); break;
                     case "FfbInvert": FfbInvert = b; break;
                     case "FfbStrength": FfbStrength = Mathf.Clamp01(fl); break;
                     case "FfbCentering": FfbCentering = Mathf.Clamp01(fl); break;
@@ -104,7 +116,7 @@ namespace RaceBoot
             {
                 File.WriteAllLines(FilePath, new[]
                 {
-                    "DisplayMode=" + DisplayMode, "Width=" + Width, "Height=" + Height,
+                    "Language=" + L.Code, "DisplayMode=" + DisplayMode, "Width=" + Width, "Height=" + Height,
                     "VSync=" + (VSync ? 1 : 0), "Bezel=" + (Bezel ? 1 : 0), "Outline=" + (Outline ? 1 : 0),
                     "Beautify=" + (Beautify ? 1 : 0), "Crt=" + (Crt ? 1 : 0), "LightHalftone=" + (LightHalftone ? 1 : 0),
                     "CameraView=" + CameraView, "CamHeight=" + F(CamHeight), "CamForward=" + F(CamForward),
@@ -112,7 +124,8 @@ namespace RaceBoot
                     "HudScale=" + F(HudScale), "HudSpreadX=" + F(HudSpreadX), "HudSpreadY=" + F(HudSpreadY),
                     "HudMargin=" + F(HudMargin), "HudGaugeLow=" + (HudGaugeLow ? 1 : 0), "HudHidden=" + string.Join(",", HudHidden),
                     "HudInfoY=" + F(HudInfoY), "GaugeX=" + F(GaugeX), "GaugeY=" + F(GaugeY), "GaugeScale=" + F(GaugeScale),
-                    "Ffb=" + (Ffb ? 1 : 0), "Replay=" + (ReplayEnabled ? 1 : 0), "FfbInvert=" + (FfbInvert ? 1 : 0), "FfbStrength=" + F(FfbStrength),
+                    "Ffb=" + (Ffb ? 1 : 0), "Replay=" + (ReplayEnabled ? 1 : 0), "Intro=" + (IntroEnabled ? 1 : 0),
+                    "VolMaster=" + F(VolMaster), "VolMusic=" + F(VolMusic), "VolEngine=" + F(VolEngine), "VolFx=" + F(VolFx), "Soundtrack=" + Soundtrack, "RaceCam=" + Arcade.PoseString(), "FfbInvert=" + (FfbInvert ? 1 : 0), "FfbStrength=" + F(FfbStrength),
                     "FfbCentering=" + F(FfbCentering), "FfbEffects=" + F(FfbEffects),
                     "WheelDevice=" + Wheel.Device, "WheelSteerAxis=" + Wheel.SteerAxis, "WheelSteerCenter=" + F(Wheel.SteerCenter),
                     "WheelSteerInvert=" + (Wheel.SteerInvert ? 1 : 0), "WheelSteerSens=" + F(Wheel.SteerSens),
@@ -169,6 +182,76 @@ namespace RaceBoot
 
         public static OptionsMenu? Instance;
         bool open;
+        static OptionsMenu? instance;
+        public static bool IsOpen => instance != null && instance.open;
+        public static void SetOpenForTest(bool v) => instance?.SetOpen(v);   // test bench only
+        public static void AskQuitForTest(bool v) { if (instance != null) { if (v) instance.AskQuit(); else instance.CloseQuit(); } }   // test bench only
+
+        // ---------------- Esc: quit confirmation ----------------
+
+        bool quitAsk;
+        float quitTimeScale = 1f;
+        bool quitCursorVisible;
+        CursorLockMode quitLock;
+
+        void AskQuit()
+        {
+            if (quitAsk) return;
+            quitAsk = true;
+            quitTimeScale = Time.timeScale; Time.timeScale = 0f;
+            quitCursorVisible = Cursor.visible; quitLock = Cursor.lockState;
+            Cursor.visible = true; Cursor.lockState = CursorLockMode.None;
+            AudioListener.pause = true;
+        }
+
+        void CloseQuit()
+        {
+            if (!quitAsk) return;
+            quitAsk = false;
+            if (Time.timeScale == 0f) Time.timeScale = quitTimeScale;
+            Cursor.visible = quitCursorVisible; Cursor.lockState = quitLock;
+            AudioListener.pause = false;
+        }
+
+        void ConfirmQuit()
+        {
+            Settings.Save();
+            Application.Quit();
+        }
+
+        // Gamepad: A / Cross (menu next) quits, B / Circle (menu back) cancels.
+        void QuitPad()
+        {
+            if (!quitAsk || !Rewired.ReInput.isReady) return;
+            var p = Rewired.ReInput.players.GetPlayer(0);
+            if (p == null) return;
+            if (p.GetButtonDown("menu back")) CloseQuit();
+            else if (p.GetButtonDown("menu next")) ConfirmQuit();
+        }
+
+        void DrawQuit()
+        {
+            float s = Mathf.Clamp(Screen.height / 1080f, 0.7f, 2f);
+            BuildStyles(s);
+            GUI.color = new Color(0f, 0f, 0f, 0.55f);
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            float w = 620 * s, h = 250 * s;
+            var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
+            GUI.Box(r, GUIContent.none, box);
+            GUILayout.BeginArea(new Rect(r.x + 30 * s, r.y + 24 * s, r.width - 60 * s, r.height - 48 * s));
+            GUILayout.Label(L.T("Quitter le jeu ?"), title);
+            GUILayout.FlexibleSpace();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(L.T("Quitter"), toggleOn, GUILayout.Height(48 * s))) ConfirmQuit();
+            GUILayout.Space(16 * s);
+            if (GUILayout.Button(L.T("Annuler"), button, GUILayout.Height(48 * s))) CloseQuit();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(8 * s);
+            GUILayout.Label(L.T("Entrée : quitter   —   Échap : annuler"), small);
+            GUILayout.EndArea();
+        }
+        public static void SetTabForTest(int t) { if (instance != null) instance.tab = t; }   // test bench only
         int tab;
         float savedTimeScale = 1f;
         bool savedCursorVisible;
@@ -196,12 +279,16 @@ namespace RaceBoot
             Settings.ApplyDisplay();
             RefreshResolutions();
             SceneManager.sceneLoaded += (s, m) => { nextEnforce = 0f; displayFixes = 0; Halftone.Apply(Settings.LightHalftone, true); };
+            instance = this;
+            FreeCam.Install();
+            Arcade.Install();
+            GameAudio.Install();
             CameraViews.Install();
             Hud.Install();
             Replay.Install();
         }
 
-        void OnApplicationQuit() => Ffb.Shutdown("arrêté");
+        void OnApplicationQuit() => Ffb.Shutdown(L.T("arrêté"));
 
         void RefreshResolutions()
         {
@@ -214,6 +301,7 @@ namespace RaceBoot
 
         void Update()
         {
+            QuitPad();
             // The pause FSM of the race switches the arcade bezel on: keep it as configured, every frame.
             var bezel = FindAnywhere("crt_frame");
             if (bezel && bezel!.activeSelf != Settings.Bezel) bezel.SetActive(Settings.Bezel);
@@ -274,6 +362,10 @@ namespace RaceBoot
 
         public static void ApplyGraphics()
         {
+            // Every AI car carries an enabled "debug_camera" that renders the whole scene under the real one.
+            foreach (var c in Camera.allCameras)
+                if (c.name == "debug_camera") c.enabled = false;
+
             var frame = FindAnywhere("crt_frame");
             if (frame && frame!.activeSelf != Settings.Bezel) frame.SetActive(Settings.Bezel);
 
@@ -369,13 +461,24 @@ namespace RaceBoot
                 SetOpen(!open);
                 e.Use();
             }
+            if (quitAsk)
+            {
+                if (e.type == EventType.KeyDown)
+                {
+                    if (e.keyCode == KeyCode.Escape || e.keyCode == KeyCode.N) { CloseQuit(); e.Use(); return; }
+                    if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.keyCode == KeyCode.O || e.keyCode == KeyCode.Y) { ConfirmQuit(); e.Use(); return; }
+                }
+                DrawQuit();
+                return;
+            }
+            if (!open && e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape) { AskQuit(); e.Use(); return; }
             if (!open && e.type == EventType.KeyDown && e.keyCode == KeyCode.C) { CameraViews.Cycle(); e.Use(); }
             if (!open)
             {
                 if (Time.unscaledTime < 12f)
                 {
                     BuildStyles(Mathf.Max(0.75f, Screen.height / 1080f));
-                    GUI.Label(new Rect(20, Screen.height - 50, 900, 40), "F1 : options   —   C / bouton Y : changer de vue", small);
+                    GUI.Label(new Rect(20, Screen.height - 50, 900, 40), L.T("F1 : options   —   C / bouton Y : changer de vue"), small);
                 }
                 return;
             }
@@ -390,7 +493,7 @@ namespace RaceBoot
             GUILayout.Label("9OsGP — OPTIONS", title);
             GUILayout.Space(10 * s);
             GUILayout.BeginHorizontal();
-            string[] tabs = { "Affichage", "Graphismes", "Caméra", "HUD", "Contrôles" };
+            string[] tabs = { L.T("Affichage"), L.T("Graphismes"), L.T("Caméra"), L.T("HUD"), L.T("Audio"), L.T("Contrôles") };
             for (int i = 0; i < tabs.Length; i++)
                 if (GUILayout.Button(tabs[i], i == tab ? toggleOn : toggleOff, GUILayout.Height(44 * s))) tab = i;
             GUILayout.EndHorizontal();
@@ -401,13 +504,14 @@ namespace RaceBoot
             else if (tab == 1) DrawGraphics(s);
             else if (tab == 2) DrawCamera(s);
             else if (tab == 3) DrawHud(s);
+            else if (tab == 4) DrawAudio(s);
             else controls.Draw(s, header!, label!, small!, button!, toggleOn!);
             GUILayout.EndScrollView();
 
             GUILayout.FlexibleSpace();
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Fermer (F1 / Échap)", button, GUILayout.Height(44 * s))) SetOpen(false);
-            if (GUILayout.Button("Quitter le jeu", button, GUILayout.Height(44 * s), GUILayout.Width(220 * s))) { Settings.Save(); Application.Quit(); }
+            if (GUILayout.Button(L.T("Fermer (F1 / Échap)"), button, GUILayout.Height(44 * s))) SetOpen(false);
+            if (GUILayout.Button(L.T("Quitter le jeu"), button, GUILayout.Height(44 * s), GUILayout.Width(220 * s))) { Settings.Save(); Application.Quit(); }
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
@@ -417,8 +521,8 @@ namespace RaceBoot
             GUILayout.BeginHorizontal();
             GUILayout.Label(name, label, GUILayout.Height(40 * s));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Oui", value ? toggleOn : toggleOff, GUILayout.Width(110 * s), GUILayout.Height(40 * s))) value = true;
-            if (GUILayout.Button("Non", !value ? toggleOn : toggleOff, GUILayout.Width(110 * s), GUILayout.Height(40 * s))) value = false;
+            if (GUILayout.Button(L.T("Oui"), value ? toggleOn : toggleOff, GUILayout.Width(110 * s), GUILayout.Height(40 * s))) value = true;
+            if (GUILayout.Button(L.T("Non"), !value ? toggleOn : toggleOff, GUILayout.Width(110 * s), GUILayout.Height(40 * s))) value = false;
             GUILayout.EndHorizontal();
             GUILayout.Space(6 * s);
             return value;
@@ -426,9 +530,15 @@ namespace RaceBoot
 
         void DrawDisplay(float s)
         {
-            GUILayout.Label("Mode d'affichage", header);
+            GUILayout.Label(L.T("Langue"), header);
             GUILayout.BeginHorizontal();
-            string[] modes = { "Plein écran", "Plein écran fenêtré", "Fenêtré" };
+            for (int i = 0; i < L.Codes.Length; i++)
+                if (GUILayout.Button(L.Names[i], L.Code == L.Codes[i] ? toggleOn : toggleOff, GUILayout.Height(42 * s))) L.Code = L.Codes[i];
+            GUILayout.EndHorizontal();
+            GUILayout.Space(14 * s);
+            GUILayout.Label(L.T("Mode d'affichage"), header);
+            GUILayout.BeginHorizontal();
+            string[] modes = { L.T("Plein écran"), L.T("Plein écran fenêtré"), L.T("Fenêtré") };
             for (int i = 0; i < 3; i++)
                 if (GUILayout.Button(modes[i], Settings.DisplayMode == i ? toggleOn : toggleOff, GUILayout.Height(42 * s)))
                 {
@@ -444,7 +554,7 @@ namespace RaceBoot
             GUILayout.EndHorizontal();
             GUILayout.Space(16 * s);
 
-            GUILayout.Label("Résolution", header);
+            GUILayout.Label(L.T("Résolution"), header);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("◄", button, GUILayout.Width(60 * s), GUILayout.Height(42 * s)) && resolutions.Length > 0)
                 resIndex = (resIndex - 1 + resolutions.Length) % resolutions.Length;
@@ -452,17 +562,17 @@ namespace RaceBoot
             GUILayout.Label(cur, new GUIStyle(label) { alignment = TextAnchor.MiddleCenter }, GUILayout.Height(42 * s));
             if (GUILayout.Button("►", button, GUILayout.Width(60 * s), GUILayout.Height(42 * s)) && resolutions.Length > 0)
                 resIndex = (resIndex + 1) % resolutions.Length;
-            if (GUILayout.Button("Appliquer", button, GUILayout.Width(160 * s), GUILayout.Height(42 * s)) && resolutions.Length > 0)
+            if (GUILayout.Button(L.T("Appliquer"), button, GUILayout.Width(160 * s), GUILayout.Height(42 * s)) && resolutions.Length > 0)
             {
                 Settings.Width = resolutions[resIndex].width;
                 Settings.Height = resolutions[resIndex].height;
                 Settings.ApplyDisplay();
             }
             GUILayout.EndHorizontal();
-            GUILayout.Label("Actuelle : " + Screen.width + " × " + Screen.height, small);
+            GUILayout.Label(L.T("Actuelle : ") + Screen.width + " × " + Screen.height, small);
             GUILayout.Space(16 * s);
 
-            bool v = Row("Synchronisation verticale (V-Sync)", Settings.VSync, s);
+            bool v = Row(L.T("Synchronisation verticale (V-Sync)"), Settings.VSync, s);
             if (v != Settings.VSync) { Settings.VSync = v; Settings.ApplyDisplay(); }
         }
 
@@ -476,48 +586,83 @@ namespace RaceBoot
             return v;
         }
 
+        List<string>? trackIds;
+        List<string>? trackNames;
+        float tracksAt = -10f;
+
+        void DrawAudio(float s)
+        {
+            GUILayout.Label(L.T("Volumes"), header);
+            Settings.VolMaster = Slider(L.T("Général"), Settings.VolMaster, 0f, 1f, "", s);
+            Settings.VolMusic = Slider(L.T("Musique"), Settings.VolMusic, 0f, 1f, "", s);
+            Settings.VolEngine = Slider(L.T("Moteurs"), Settings.VolEngine, 0f, 1f, "", s);
+            Settings.VolFx = Slider(L.T("Effets sonores"), Settings.VolFx, 0f, 1f, "", s);
+
+            GUILayout.Space(14 * s);
+            GUILayout.Label(L.T("Bande-son"), header);
+            if (trackIds == null || (Event.current.type == EventType.Layout && Time.unscaledTime - tracksAt > 2f))
+            {
+                tracksAt = Time.unscaledTime;
+                trackIds = new List<string> { GameAudio.Original };
+                trackNames = new List<string> { L.T("Originale (90's GP)") };
+                var files = GameAudio.UserFiles();
+                if (files.Count > 1) { trackIds.Add(GameAudio.Random); trackNames.Add(L.T("Aléatoire (vos musiques)")); }
+                foreach (var f in files) { trackIds.Add("file:" + f); trackNames.Add("♪ " + f); }
+            }
+            int idx = Mathf.Max(0, trackIds.IndexOf(Settings.Soundtrack));
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("◄", button, GUILayout.Width(60 * s), GUILayout.Height(42 * s))) idx = (idx + trackIds.Count - 1) % trackIds.Count;
+            GUILayout.Label(trackNames![idx], header, GUILayout.Height(42 * s));
+            if (GUILayout.Button("►", button, GUILayout.Width(60 * s), GUILayout.Height(42 * s))) idx = (idx + 1) % trackIds.Count;
+            GUILayout.EndHorizontal();
+            Settings.Soundtrack = trackIds[idx];
+            GUILayout.Label(L.T("Vos propres musiques (mp3, ogg, wav) : placez-les dans le dossier « Music » à côté de 9OsGP.exe."), small);
+        }
+
         void DrawCamera(float s)
         {
-            GUILayout.Label("Vue", header);
+            GUILayout.Label(L.T("Vue"), header);
             GUILayout.BeginHorizontal();
             for (int i = 0; i < CameraViews.Names.Length; i++)
-                if (GUILayout.Button(CameraViews.Names[i], Settings.CameraView == i ? toggleOn : toggleOff, GUILayout.Height(42 * s))) Settings.CameraView = i;
+                if (GUILayout.Button(L.T(CameraViews.Names[i]), Settings.CameraView == i ? toggleOn : toggleOff, GUILayout.Height(42 * s))) Settings.CameraView = i;
             GUILayout.EndHorizontal();
-            GUILayout.Label("En course : touche C (clavier) ou bouton Y / Select (manette) pour changer de vue.", small);
+            GUILayout.Label(L.T("En course : touche C (clavier) ou bouton Y / Select (manette) pour changer de vue."), small);
             GUILayout.Space(10 * s);
-            Settings.ReplayEnabled = Row("Replay de la course sur l'écran « PRESS START »", Settings.ReplayEnabled, s);
+            Settings.ReplayEnabled = Row(L.T("Replay de la course sur l'écran « PRESS START »"), Settings.ReplayEnabled, s);
+            GUILayout.Label(L.T("F9 sur l'écran « PRESS START » : revoir le dernier replay (gardé même après avoir quitté le jeu)."), small);
+            Settings.IntroEnabled = Row(L.T("Présentation de la voiture avant le compte à rebours"), Settings.IntroEnabled, s);
             GUILayout.Space(14 * s);
-            GUILayout.Label("Réglages des vues intérieures", header);
-            Settings.CamFov = Slider("Champ de vision", Settings.CamFov, 40f, 110f, "°", s);
-            Settings.CamHeight = Slider("Hauteur", Settings.CamHeight, -0.6f, 0.6f, " m", s);
-            Settings.CamForward = Slider("Avant / arrière", Settings.CamForward, -1.5f, 1.5f, " m", s);
-            Settings.CamPitch = Slider("Inclinaison", Settings.CamPitch, -15f, 20f, "°", s);
-            if (GUILayout.Button("Valeurs par défaut", button, GUILayout.Height(40 * s)))
+            GUILayout.Label(L.T("Réglages des vues intérieures"), header);
+            Settings.CamFov = Slider(L.T("Champ de vision"), Settings.CamFov, 40f, 110f, "°", s);
+            Settings.CamHeight = Slider(L.T("Hauteur"), Settings.CamHeight, -0.6f, 0.6f, " m", s);
+            Settings.CamForward = Slider(L.T("Avant / arrière"), Settings.CamForward, -1.5f, 1.5f, " m", s);
+            Settings.CamPitch = Slider(L.T("Inclinaison"), Settings.CamPitch, -15f, 20f, "°", s);
+            if (GUILayout.Button(L.T("Valeurs par défaut"), button, GUILayout.Height(40 * s)))
             { Settings.CamFov = 70f; Settings.CamHeight = 0f; Settings.CamForward = 0f; Settings.CamPitch = 5f; }
         }
 
         void DrawHud(float s)
         {
-            GUILayout.Label("Éléments affichés", header);
+            GUILayout.Label(L.T("Éléments affichés"), header);
             foreach (var g in Hud.Groups)
-                Settings.SetHudShown(g.Key, Row(g.Name, Settings.HudShown(g.Key), s));
+                Settings.SetHudShown(g.Key, Row(L.T(g.Name), Settings.HudShown(g.Key), s));
             if (Hud.MinimapAvailable)
-                Settings.SetHudShown("Minimap", Row("Mini-carte (cachée par les développeurs)", Settings.HudShown("Minimap"), s));
+                Settings.SetHudShown("Minimap", Row(L.T("Mini-carte (cachée par les développeurs)"), Settings.HudShown("Minimap"), s));
             GUILayout.Space(10 * s);
-            GUILayout.Label("Compte-tours et vitesse", header);
-            Settings.GaugeScale = Slider("Taille", Settings.GaugeScale, 0.4f, 2f, "", s);
-            Settings.GaugeX = Slider("Position horizontale", Settings.GaugeX, -0.5f, 0.5f, "", s);
-            Settings.GaugeY = Slider("Position verticale", Settings.GaugeY, -0.5f, 0.5f, "", s);
-            Settings.HudGaugeLow = Row("En bas de l'écran en vue capot / intérieure", Settings.HudGaugeLow, s);
+            GUILayout.Label(L.T("Compte-tours et vitesse"), header);
+            Settings.GaugeScale = Slider(L.T("Taille"), Settings.GaugeScale, 0.4f, 2f, "", s);
+            Settings.GaugeX = Slider(L.T("Position horizontale"), Settings.GaugeX, -0.5f, 0.5f, "", s);
+            Settings.GaugeY = Slider(L.T("Position verticale"), Settings.GaugeY, -0.5f, 0.5f, "", s);
+            Settings.HudGaugeLow = Row(L.T("En bas de l'écran en vue capot / intérieure"), Settings.HudGaugeLow, s);
             GUILayout.Space(8 * s);
-            GUILayout.Label("Autres informations (temps, position, tours)", header);
-            Settings.HudScale = Slider("Taille", Settings.HudScale, 0.5f, 1.5f, "", s);
-            Settings.HudInfoY = Slider("Hauteur", Settings.HudInfoY, -0.3f, 0.3f, "", s);
-            Settings.HudSpreadX = Slider("Écartement horizontal", Settings.HudSpreadX, 0f, 1f, "", s);
-            Settings.HudSpreadY = Slider("Écartement vertical", Settings.HudSpreadY, 0f, 1f, "", s);
-            Settings.HudMargin = Slider("Marge aux bords", Settings.HudMargin, 0f, 0.15f, "", s);
-            GUILayout.Label("Écartement à 1 : blocs plaqués contre les bords de l'écran (utile en 16:9 / 21:9). Hauteur positive = plus haut.", small);
-            if (GUILayout.Button("Valeurs par défaut", button, GUILayout.Height(40 * s)))
+            GUILayout.Label(L.T("Autres informations (temps, position, tours)"), header);
+            Settings.HudScale = Slider(L.T("Taille"), Settings.HudScale, 0.5f, 1.5f, "", s);
+            Settings.HudInfoY = Slider(L.T("Hauteur"), Settings.HudInfoY, -0.3f, 0.3f, "", s);
+            Settings.HudSpreadX = Slider(L.T("Écartement horizontal"), Settings.HudSpreadX, 0f, 1f, "", s);
+            Settings.HudSpreadY = Slider(L.T("Écartement vertical"), Settings.HudSpreadY, 0f, 1f, "", s);
+            Settings.HudMargin = Slider(L.T("Marge aux bords"), Settings.HudMargin, 0f, 0.15f, "", s);
+            GUILayout.Label(L.T("Écartement à 1 : blocs plaqués contre les bords de l'écran (utile en 16:9 / 21:9). Hauteur positive = plus haut."), small);
+            if (GUILayout.Button(L.T("Valeurs par défaut"), button, GUILayout.Height(40 * s)))
             {
                 Settings.HudScale = 1f; Settings.HudSpreadX = 0f; Settings.HudSpreadY = 0f; Settings.HudMargin = 0.03f;
                 Settings.HudGaugeLow = true; Settings.HudHidden = new HashSet<string> { "Minimap" };
@@ -527,14 +672,14 @@ namespace RaceBoot
 
         void DrawGraphics(float s)
         {
-            Settings.Bezel = Row("Bezel (cadre de la borne d'arcade)", Settings.Bezel, s);
-            Settings.Crt = Row("Effet écran CRT (courbure, lignes)", Settings.Crt, s);
-            Settings.Outline = Row("Contours noirs (cel shading)", Settings.Outline, s);
-            Settings.Beautify = Row("Post-traitement BD (trame, couleurs)", Settings.Beautify, s);
-            bool lh = Row("Trame BD sur les éclairages (halftone)", Settings.LightHalftone, s);
+            Settings.Bezel = Row(L.T("Bezel (cadre de la borne d'arcade)"), Settings.Bezel, s);
+            Settings.Crt = Row(L.T("Effet écran CRT (courbure, lignes)"), Settings.Crt, s);
+            Settings.Outline = Row(L.T("Contours noirs (cel shading)"), Settings.Outline, s);
+            Settings.Beautify = Row(L.T("Post-traitement BD (trame, couleurs)"), Settings.Beautify, s);
+            bool lh = Row(L.T("Trame BD sur les éclairages (halftone)"), Settings.LightHalftone, s);
             if (lh != Settings.LightHalftone) { Settings.LightHalftone = lh; Halftone.Apply(lh, true); }
             GUILayout.Space(10 * s);
-            GUILayout.Label("Les changements sont appliqués immédiatement et enregistrés à la fermeture du menu.", small);
+            GUILayout.Label(L.T("Les changements sont appliqués immédiatement et enregistrés à la fermeture du menu."), small);
             ApplyGraphics();
         }
     }

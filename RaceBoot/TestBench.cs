@@ -13,7 +13,7 @@ namespace RaceBoot
     public class TestBench : MonoBehaviour
     {
         static string Dir => Path.Combine(Application.dataPath, "..");
-        string mode = "";
+        string mode = "", arg = "";
 
         public static void Run()
         {
@@ -22,13 +22,38 @@ namespace RaceBoot
             var go = new GameObject("RaceBootTestBench");
             DontDestroyOnLoad(go);
             var tb = go.AddComponent<TestBench>();
-            tb.mode = File.ReadAllLines(f).Length > 0 ? File.ReadAllLines(f)[0].Trim() : "";
+            var lines = File.ReadAllLines(f);
+            tb.mode = lines.Length > 0 ? lines[0].Trim() : "";
+            tb.arg = lines.Length > 1 ? lines[1].Trim() : "";
         }
 
         IEnumerator Start()
         {
+            // Keep running (and out of the pause menu) if the window loses the focus meanwhile.
+            Application.runInBackground = true;
             yield return new WaitForSecondsRealtime(4f);
+            var pauseFsm = Showcase.Fsm("GameManager", "pause");
+            if (pauseFsm) pauseFsm!.enabled = false;
+            if (mode == "f9") { yield return F9Test(); Application.Quit(); yield break; }
+            if (mode == "quit") { yield return QuitTest(); Application.Quit(); yield break; }
+            if (mode == "audio") { yield return AudioTest(); Application.Quit(); yield break; }
+            if (mode == "intro") { yield return IntroTest(); Application.Quit(); yield break; }
+            if (mode == "countdown") { yield return CountdownTest(); Application.Quit(); yield break; }
+            if (mode == "ui") { yield return UiTest(); Application.Quit(); yield break; }
+            if (mode == "langdump") { LangDump(); Application.Quit(); yield break; }
             Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            if (mode == "replay")
+            {
+                // Arcade intro before the countdown.
+                var introDir = Path.Combine(Dir, "replaytest");
+                Directory.CreateDirectory(introDir);
+                for (int i = 0; i < 19; i++)
+                {
+                    yield return new WaitForSecondsRealtime(0.55f);
+                    ScreenCapture.CaptureScreenshot(Path.Combine(introDir, $"i{i:00}.png"));
+                }
+                while (Arcade.IntroPlaying) yield return null;
+            }
             yield return new WaitForSecondsRealtime(mode == "replay" ? 0.5f : 4.5f);
             var input = Showcase.Fsm("race_car_01", "INPUT");
             if (input) input!.enabled = false;
@@ -78,9 +103,23 @@ namespace RaceBoot
             var rm = Showcase.Fsm("GameManager", "race manager");
             var fsm = rm?.GetType().GetProperty("Fsm")?.GetValue(rm);
             fsm?.GetType().GetMethod("SetState", new[] { typeof(string) })?.Invoke(fsm, new object[] { "finished!" });
-            float wait = Time.realtimeSinceStartup + 40f;
-            while (!Replay.Playing && Time.realtimeSinceStartup < wait) yield return null;
-            Debug.Log("[RaceBoot] testbench: replay playing = " + Replay.Playing);
+            float wait = Time.realtimeSinceStartup + 60f;
+            bool reloaded = false;
+            UnityEngine.Events.UnityAction<Scene, LoadSceneMode> onLoad = (sc, m) => reloaded = true;
+            SceneManager.sceneLoaded += onLoad;
+            var endDir = Path.Combine(Dir, "replaytest");
+            Directory.CreateDirectory(endDir);
+            int shot = 0;
+            float next = 0f, after = -1f;
+            // End of race -> replay: captures every 0.2 s to catch any "PRESS START" in between.
+            while (Time.realtimeSinceStartup < wait && (after < 0f || Time.realtimeSinceStartup < after))
+            {
+                if (Replay.Playing && after < 0f) after = Time.realtimeSinceStartup + 1.5f;
+                if (reloaded && Time.realtimeSinceStartup >= next && shot < 120) { next = Time.realtimeSinceStartup + 0.1f; ScreenCapture.CaptureScreenshot(Path.Combine(endDir, $"e{shot++:000}.png")); }
+                yield return null;
+            }
+            SceneManager.sceneLoaded -= onLoad;
+            Debug.Log("[RaceBoot] testbench: replay playing = " + Replay.Playing + ", end captures = " + shot);
             var outDir = Path.Combine(Dir, "replaytest");
             Directory.CreateDirectory(outDir);
             for (int i = 0; i < 24; i++)
@@ -91,13 +130,333 @@ namespace RaceBoot
             }
             Replay.DebugForceShot = null;
 
-            // Start a new race from the replay: it must stop and give the normal race back.
+            // START during the replay: GAME OVER, then the "PRESS START" screen, then a normal race.
+            Replay.PressForTest();
+            yield return new WaitForSecondsRealtime(1.5f);
+            Debug.Log("[RaceBoot] testbench: game over shown = " + Replay.GameOverShown);
+            ScreenCapture.CaptureScreenshot(Path.Combine(outDir, "y_gameover.png"));
+            yield return new WaitForSecondsRealtime(1.3f);
+            for (int k = 0; k < 30; k++)
+            {
+                ScreenCapture.CaptureScreenshot(Path.Combine(outDir, $"x{k:00}.png"));
+                yield return new WaitForSecondsRealtime(0.07f);
+            }
+            Debug.Log("[RaceBoot] testbench: after game over, replay playing = " + Replay.Playing);
+            foreach (var cv in Resources.FindObjectsOfTypeAll<Canvas>())
+                if (cv.name == "press_start_canvas" && cv.gameObject.scene.isLoaded)
+                    Debug.Log($"[RaceBoot] testbench: press_start active={cv.gameObject.activeInHierarchy} enabled={cv.enabled} mode={cv.renderMode} cam={(cv.worldCamera ? cv.worldCamera.name + " en=" + cv.worldCamera.enabled : "null")}");
+            var rm2 = Showcase.Fsm("GameManager", "race manager");
+            var f2 = rm2?.GetType().GetProperty("Fsm")?.GetValue(rm2);
+            Debug.Log("[RaceBoot] testbench: race manager enabled=" + (rm2 ? rm2!.enabled : false) + " state=" + f2?.GetType().GetProperty("ActiveStateName")?.GetValue(f2));
+            for (int k = 0; k < 4; k++)
+            {
+                ScreenCapture.CaptureScreenshot(Path.Combine(outDir, $"y_pressstart{k}.png"));
+                yield return new WaitForSecondsRealtime(0.2f);
+            }
+            yield return new WaitForSecondsRealtime(1f);
             Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
             yield return new WaitForSecondsRealtime(6f);
             Debug.Log("[RaceBoot] testbench: after new race, replay playing = " + Replay.Playing);
             ScreenCapture.CaptureScreenshot(Path.Combine(outDir, "z_newrace.png"));
             yield return new WaitForSecondsRealtime(1f);
         }
+
+        // Saved replay: F9 on the title screen, without racing.
+        IEnumerator F9Test()
+        {
+            Replay.PlaySaved();
+            Debug.Log("[RaceBoot] testbench: f9 replay playing = " + Replay.Playing);
+            var outDir = Path.Combine(Dir, "replaytest");
+            Directory.CreateDirectory(outDir);
+            for (int i = 0; i < 8; i++)
+            {
+                yield return new WaitForSecondsRealtime(3f);
+                ScreenCapture.CaptureScreenshot(Path.Combine(outDir, $"f{i:00}.png"));
+            }
+            Replay.PlaySaved();   // restart
+            yield return new WaitForSecondsRealtime(1f);
+            Debug.Log("[RaceBoot] testbench: f9 restart playing = " + Replay.Playing);
+        }
+
+        static void LangDump()
+        {
+            const BindingFlags A = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+            var sb = new StringBuilder();
+            sb.AppendLine("=== TEXT ASSETS ===");
+            foreach (var t in Resources.FindObjectsOfTypeAll<TextAsset>())
+                try { if (t && t.text != null) sb.AppendLine($" {t.name} ({t.text.Length}) {t.text.Substring(0, Math.Min(120, t.text.Length)).Replace((char)10, (char)32)}"); } catch { sb.AppendLine(" ! text asset " + (t ? t.name : "null")); }
+            sb.AppendLine("=== FONTS ===");
+            foreach (var f in Resources.FindObjectsOfTypeAll<Font>()) sb.AppendLine(" Font " + f.name);
+            foreach (var o in Resources.FindObjectsOfTypeAll<ScriptableObject>())
+                if (o.GetType().Name.Contains("Font")) sb.AppendLine($" {o.GetType().Name} {o.name}");
+            sb.AppendLine("=== TEXTS IN UI ===");
+            foreach (var c in Resources.FindObjectsOfTypeAll<Component>())
+            {
+                try {
+                if (!c || !c.gameObject.scene.isLoaded) continue;
+                var tp = c.GetType();
+                if (!(tp.Name.Contains("Text") && tp.GetProperty("text") != null)) continue;
+                var font = tp.GetProperty("font")?.GetValue(c) as UnityEngine.Object;
+                string txt = (tp.GetProperty("text")?.GetValue(c) as string ?? "").Replace((char)10, (char)32);
+                sb.AppendLine($" {PathOf(c.transform)} [{tp.Name}] font={(font ? font!.name : "-")} text={txt.Substring(0, Math.Min(60, txt.Length))}");
+                } catch (Exception ex) { sb.AppendLine(" ! " + ex.Message); }
+            }
+            sb.AppendLine("=== LOCALIZATION TYPES ===");
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (asm.GetName().Name != "Assembly-CSharp") continue;
+                foreach (var tp in asm.GetTypes())
+                try {
+                    if (!(tp.Name.Contains("Locali") || tp.Name.Contains("Language"))) continue;
+                    sb.AppendLine(" TYPE " + tp.FullName);
+                    foreach (var f in tp.GetFields(A))
+                    {
+                        object? v = null;
+                        if (f.IsStatic) try { v = f.GetValue(null); } catch { }
+                        sb.AppendLine($"   field {f.FieldType.Name} {f.Name}{(f.IsStatic ? " = " + v : "")}");
+                    }
+                    foreach (var m in tp.GetMethods(A)) if (m.DeclaringType == tp) sb.AppendLine("   method " + m);
+                    if (typeof(UnityEngine.Object).IsAssignableFrom(tp))
+                        foreach (var inst in Resources.FindObjectsOfTypeAll(tp))
+                        {
+                            sb.AppendLine("   INSTANCE " + inst.name);
+                            foreach (var f in tp.GetFields(A)) if (!f.IsStatic) try { var v = f.GetValue(inst); sb.AppendLine($"     {f.Name} = {(v is System.Collections.IEnumerable e && !(v is string) ? string.Join(",", System.Linq.Enumerable.Cast<object>(e)) : v)}"); } catch { }
+                        }
+                } catch (Exception ex) { sb.AppendLine(" ! " + ex.Message); }
+            }
+            sb.AppendLine("=== TMP SOURCE FONTS ===");
+            foreach (var o in Resources.FindObjectsOfTypeAll<ScriptableObject>())
+                if (o.GetType().Name == "TMP_FontAsset")
+                {
+                    var src = o.GetType().GetProperty("sourceFontFile", A)?.GetValue(o) as Font ?? o.GetType().GetField("m_SourceFontFile", A)?.GetValue(o) as Font;
+                    var mode = o.GetType().GetProperty("atlasPopulationMode", A)?.GetValue(o);
+                    sb.AppendLine($" {o.name}: source={(src ? src!.name + " dynamic=" + src.dynamic : "none")} mode={mode}");
+                }
+            sb.AppendLine("=== LANGUAGE FSMS ===");
+            foreach (var mb in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
+            {
+                try {
+                if (!mb || mb.GetType().Name != "PlayMakerFSM" || !mb.gameObject.scene.isLoaded) continue;
+                var fsm = mb.GetType().GetProperty("Fsm")?.GetValue(mb);
+                if (fsm == null) continue;
+                var states = (Array)fsm.GetType().GetProperty("States", A)!.GetValue(fsm);
+                string fsmName = mb.GetType().GetProperty("FsmName")?.GetValue(mb) as string ?? "";
+                string pth = PathOf(mb.transform).ToLower();
+                bool hit = pth.Contains("music") || fsmName.Contains("bgm") || fsmName.Contains("volume") || pth.Contains("transi") || pth.Contains("fade") || pth.Contains("wipe") || pth.Contains("loading") || pth.Contains("dots") || fsmName.ToLower().Contains("transi") || fsmName.ToLower().Contains("fade");
+                if (!hit) continue;
+                sb.AppendLine(" FSM " + PathOf(mb.transform) + " : " + mb.GetType().GetProperty("FsmName")?.GetValue(mb));
+                foreach (var st in states)
+                {
+                    sb.Append("  state " + st.GetType().GetProperty("Name")?.GetValue(st) + ":");
+                    var acts = st.GetType().GetProperty("Actions", A)?.GetValue(st) as Array;
+                    if (acts != null) foreach (var ac in acts)
+                    {
+                        sb.Append(" [" + ac.GetType().Name);
+                        foreach (var f in ac.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public))
+                        {
+                            var v = f.GetValue(ac);
+                            string? sv = v is string str ? str : v?.GetType().GetProperty("Value")?.GetValue(v)?.ToString();
+                            if (!string.IsNullOrEmpty(sv) && sv!.Length < 60) sb.Append(" " + f.Name + "=" + sv);
+                        }
+                        sb.Append("]");
+                    }
+                    sb.AppendLine();
+                }
+                } catch (Exception ex) { sb.AppendLine(" ! fsm " + ex.Message); }
+            }
+            sb.AppendLine("=== OBJECTS *over* ===");
+            foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+                if (t && t.gameObject.scene.isLoaded && (t.name.ToLower().Contains("transi") || t.name.ToLower().Contains("fade") || t.name.ToLower().Contains("wipe") || t.name.ToLower().Contains("dot") || t.name.ToLower().Contains("halftone")))
+                    sb.AppendLine($" {PathOf(t)} active={t.gameObject.activeInHierarchy}");
+            sb.AppendLine("=== TRANSITIONER ===");
+            foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+                if (t && t.gameObject.scene.isLoaded && t.name == "T2_Transitioner") Walk(t, 0, sb);
+            foreach (var mb in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
+                if (mb && mb.gameObject.name == "T2_Transitioner" && mb.GetType().Name != "PlayMakerFSM")
+                    foreach (var f in mb.GetType().GetFields(A)) { try { var v = f.GetValue(mb); sb.AppendLine($"  {mb.GetType().Name}.{f.Name} = {(v is UnityEngine.Object uo ? (uo ? uo.name : "null") : v)}"); } catch { } }
+            foreach (var c in Resources.FindObjectsOfTypeAll<Camera>())
+                if (c && c.gameObject.scene.isLoaded) sb.AppendLine($" CAM {PathOf(c.transform)} en={c.enabled} depth={c.depth} rt={(c.targetTexture ? c.targetTexture!.name : "-")} mask={c.cullingMask}");
+            foreach (var mb in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
+                if (mb && mb.GetType().Name == "PlayMakerFSM" && mb.gameObject.name == "T2_Transitioner")
+                {
+                    var fsm = mb.GetType().GetProperty("Fsm")?.GetValue(mb);
+                    foreach (var st in (Array)fsm!.GetType().GetProperty("States", A)!.GetValue(fsm))
+                        foreach (var ac in (Array)st.GetType().GetProperty("Actions", A)!.GetValue(st))
+                        {
+                            sb.Append("  action " + ac.GetType().FullName + ":");
+                            foreach (var f in ac.GetType().GetFields(A)) { try { var v = f.GetValue(ac); sb.Append(" " + f.Name + "=" + (v?.GetType().GetProperty("Value")?.GetValue(v) ?? v)); } catch { } }
+                            sb.AppendLine();
+                        }
+                    var vars = mb.GetType().GetProperty("FsmVariables")?.GetValue(mb);
+                }
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                foreach (var tp in SafeTypes(asm))
+                    if (tp.Name.Contains("Transition") && (tp.Namespace ?? "").IndexOf("UnityEngine", StringComparison.Ordinal) < 0 && tp.Name != "Transition")
+                    {
+                        sb.AppendLine(" TYPE " + tp.FullName + " in " + asm.GetName().Name);
+                        foreach (var m in tp.GetMethods(A)) if (m.DeclaringType == tp && m.IsPublic) sb.AppendLine("   method " + m);
+                    }
+            sb.AppendLine("=== AUDIO SOURCES ===");
+            foreach (var src in Resources.FindObjectsOfTypeAll<AudioSource>())
+                if (src && src.gameObject.scene.IsValid())
+                    sb.AppendLine($" {PathOf(src.transform)} clip={(src.clip ? src.clip!.name + " " + src.clip.length.ToString("F0") + "s" : "-")} vol={src.volume:F2} loop={src.loop} playing={src.isPlaying} group={(src.outputAudioMixerGroup ? src.outputAudioMixerGroup!.audioMixer.name + "/" + src.outputAudioMixerGroup.name : "-")} active={src.gameObject.activeInHierarchy}");
+            sb.AppendLine("=== MIXERS ===");
+            foreach (var m in Resources.FindObjectsOfTypeAll<UnityEngine.Audio.AudioMixer>())
+            {
+                sb.Append(" " + m.name + ":");
+                foreach (var g in m.FindMatchingGroups("")) sb.Append(" " + g.name);
+                sb.AppendLine();
+                foreach (var pn in new[] { "MasterVolume", "Master", "MusicVolume", "Music", "BGM", "bgm", "SFXVolume", "SFX", "sfx", "Volume", "music_volume", "sfx_volume", "bgm_volume" })
+                    if (m.GetFloat(pn, out float val)) sb.AppendLine($"   param {pn} = {val}");
+            }
+            sb.AppendLine("=== LONG CLIPS ===");
+            foreach (var c in Resources.FindObjectsOfTypeAll<AudioClip>())
+                if (c && c.length > 40f) sb.AppendLine($" {c.name} {c.length:F0}s loadType={c.loadType} state={c.loadState}");
+            sb.AppendLine("=== STATIC RENDERERS ===");
+            int total = 0, withCol = 0, readable = 0, big = 0, bigNoCol = 0, bigNoColReadable = 0;
+            foreach (var mr in Resources.FindObjectsOfTypeAll<MeshRenderer>())
+            try {
+                if (!mr || !mr.gameObject.scene.isLoaded || !mr.gameObject.activeInHierarchy || mr.gameObject.scene.name == "DontDestroyOnLoad") continue;
+                total++;
+                bool col = mr.GetComponent<Collider>() != null;
+                if (col) withCol++;
+                var mf = mr.GetComponent<MeshFilter>();
+                bool rd = mf && mf.sharedMesh && mf.sharedMesh.isReadable;
+                if (rd) readable++;
+                var sz = mr.bounds.size;
+                if (Mathf.Max(sz.x, Mathf.Max(sz.y, sz.z)) > 3f) { big++; if (!col) { bigNoCol++; if (rd) bigNoColReadable++; } }
+            } catch { }
+            sb.AppendLine($" total={total} withCollider={withCol} readable={readable} big={big} bigNoCollider={bigNoCol} bigNoColliderReadable={bigNoColReadable}");
+            sb.AppendLine("=== PLAYERPREFS lang ===");
+            foreach (var k in new[] { "language", "Language", "lang", "LanguageID", "CurrentLanguage" }) sb.AppendLine($" {k} = {PlayerPrefs.GetString(k, "?")} / {PlayerPrefs.GetInt(k, -99)}");
+            File.WriteAllText(Path.Combine(Dir, "langdump.txt"), sb.ToString());
+        }
+
+        // Options menu in every language, then the F8 free camera during a race.
+        IEnumerator UiTest()
+        {
+            var outDir = Path.Combine(Dir, "uitest");
+            Directory.CreateDirectory(outDir);
+            string saved = L.Code;
+            OptionsMenu.SetOpenForTest(true);
+            int n = 0;
+            foreach (var code in L.Codes)
+            {
+                L.Code = code;
+                OptionsMenu.SetTabForTest(n % 2 == 0 ? 0 : 2);
+                yield return new WaitForSecondsRealtime(0.6f);
+                ScreenCapture.CaptureScreenshot(Path.Combine(outDir, $"menu_{n++}_{code}.png"));
+                yield return null;
+            }
+            L.Code = saved;
+            OptionsMenu.SetOpenForTest(false);
+
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            yield return new WaitForSecondsRealtime(6f);
+            FreeCam.ToggleForTest();
+            Debug.Log("[RaceBoot] testbench: freecam active = " + FreeCam.Active + ", timeScale = " + Time.timeScale);
+            yield return new WaitForSecondsRealtime(0.5f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(outDir, "free_0.png"));
+            FreeCam.MoveForTest(new Vector3(0f, 25f, 0f), 120f);
+            yield return new WaitForSecondsRealtime(0.5f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(outDir, "free_1.png"));
+            FreeCam.MoveForTest(new Vector3(60f, 40f, -80f), 90f);
+            yield return new WaitForSecondsRealtime(0.5f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(outDir, "free_2.png"));
+            FreeCam.ToggleForTest();
+            yield return new WaitForSecondsRealtime(1f);
+            Debug.Log("[RaceBoot] testbench: freecam off, active = " + FreeCam.Active + ", timeScale = " + Time.timeScale);
+            ScreenCapture.CaptureScreenshot(Path.Combine(outDir, "free_3_back.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+        }
+
+        // Race intro with a given camera view (second line of testbench.txt), the player's view is put back.
+        IEnumerator IntroTest()
+        {
+            int saved = Settings.CameraView;
+            if (int.TryParse(arg, out int v)) Settings.CameraView = v;
+            var dir = Path.Combine(Dir, "introtest");
+            Directory.CreateDirectory(dir);
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            for (int i = 0; i < 25; i++)
+            {
+                yield return new WaitForSecondsRealtime(0.5f);
+                ScreenCapture.CaptureScreenshot(Path.Combine(dir, $"v{Settings.CameraView}_{i:00}.png"));
+            }
+            yield return null;
+            Settings.CameraView = saved;
+            Settings.Save();
+        }
+
+        IEnumerator QuitTest()
+        {
+            var p = Rewired.ReInput.players.GetPlayer(0);
+            foreach (var map in p.controllers.maps.GetAllMaps(Rewired.ControllerType.Keyboard))
+                foreach (var aem in map.AllMaps)
+                {
+                    var act = Rewired.ReInput.mapping.GetAction(aem.actionId);
+                    if (act != null && (act.name == "start" || act.name == "menu back" || act.name == "menu next"))
+                        Debug.Log($"[RaceBoot] testbench: key {aem.elementIdentifierName} -> {act.name}");
+                }
+            var dir = Path.Combine(Dir, "uitest");
+            Directory.CreateDirectory(dir);
+            OptionsMenu.AskQuitForTest(true);
+            yield return new WaitForSecondsRealtime(0.5f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(dir, "quit.png"));
+            yield return null;
+            Debug.Log("[RaceBoot] testbench: quit dialog timeScale = " + Time.timeScale);
+            OptionsMenu.AskQuitForTest(false);
+            yield return null;
+            Debug.Log("[RaceBoot] testbench: after cancel timeScale = " + Time.timeScale);
+        }
+
+        IEnumerator AudioTest()
+        {
+            string savedTrack = Settings.Soundtrack; float savedMusic = Settings.VolMusic;
+            AudioSource? music = null;
+            foreach (var src in Resources.FindObjectsOfTypeAll<AudioSource>())
+                if (src && src.name == "music" && src.gameObject.activeInHierarchy && src.transform.parent && src.transform.parent.name == "loading object") music = src;
+            void Log(string what) => Debug.Log($"[RaceBoot] testbench: audio {what}: clip={(music && music!.clip ? music.clip!.name : "-")} playing={(music ? music!.isPlaying : false)} vol={(music ? music!.volume : -1f):F2} time={(music ? music!.time : 0f):F1}");
+            Log("start");
+            foreach (var id in new[] { "file:test_tone.wav", "*random", "" })
+            {
+                Settings.Soundtrack = id;
+                yield return new WaitForSecondsRealtime(2.5f);
+                Log(id == "" ? "original" : id);
+            }
+            Settings.VolMusic = 0.5f;
+            yield return new WaitForSecondsRealtime(0.5f);
+            Log("music 50%");
+            var dir = Path.Combine(Dir, "uitest");
+            Directory.CreateDirectory(dir);
+            OptionsMenu.SetOpenForTest(true);
+            OptionsMenu.SetTabForTest(4);
+            yield return new WaitForSecondsRealtime(0.6f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(dir, "audio_tab.png"));
+            yield return null;
+            Settings.Soundtrack = savedTrack; Settings.VolMusic = savedMusic;
+            OptionsMenu.SetOpenForTest(false);
+            yield return new WaitForSecondsRealtime(0.3f);
+        }
+
+        IEnumerator CountdownTest()
+        {
+            var rm = Showcase.Fsm("GameManager", "race manager");
+            var fsm = rm?.GetType().GetProperty("Fsm")?.GetValue(rm);
+            var act = fsm?.GetType().GetProperty("ActiveStateName");
+            Showcase.Send(rm, "FINISHED");
+            var car = GameObject.Find("race_car_01");
+            var rb = car ? car!.GetComponent<Rigidbody>() : null;
+            Rigidbody? ai = null;
+            foreach (var r in FindObjectsOfType<Rigidbody>()) if (r.name.StartsWith("AI_car")) { ai = r; break; }
+            for (int i = 0; i < 32; i++)
+            {
+                Debug.Log($"[RaceBoot] testbench: cd t={Time.time:F2} st={act?.GetValue(fsm)} player={(rb ? rb!.position.ToString("F2") + " v=" + rb.linearVelocity.magnitude.ToString("F2") + " kin=" + rb.isKinematic : "-")} ai={(ai ? ai!.position.ToString("F1") + " v=" + ai.linearVelocity.magnitude.ToString("F1") : "-")}");
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+        }
+
+        static Type[] SafeTypes(System.Reflection.Assembly a) { try { return a.GetTypes(); } catch { return new Type[0]; } }
 
         static void RaceDump()
         {
