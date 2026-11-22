@@ -326,7 +326,32 @@ namespace RaceBoot
         float t, startedAt;
         int cursor;
         readonly HashSet<Camera> muted = new HashSet<Camera>();
+        readonly HashSet<Renderer> hidden = new HashSet<Renderer>();
+        float nextHide;
         Canvas? pressStart;
+
+        // The real cars stay in the title scene (the AI cars live in a DontDestroyOnLoad pool, the player's car
+        // waits on the grid): parked and motionless, they would show up in the replay next to their copies.
+        void HideRealCars()
+        {
+            nextHide = Time.unscaledTime + 0.5f;
+            var roots = new List<Transform>();
+            foreach (var rb in FindObjectsOfType<Rigidbody>())
+                if (rb.name.StartsWith("AI_car")) roots.Add(rb.transform);
+            var player = GameObject.Find("race_car_01");
+            if (player) roots.Add(player.transform);
+            int before = hidden.Count;
+            foreach (var root in roots)
+                foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+                    if (r.enabled && !r.transform.IsChildOf(stage!.transform)) { r.enabled = false; hidden.Add(r); }
+            if (hidden.Count != before) Debug.Log($"[RaceBoot] replay: hid {hidden.Count - before} renderers of {roots.Count} real cars");
+        }
+
+        void ShowRealCars()
+        {
+            foreach (var r in hidden) if (r) r.enabled = true;
+            hidden.Clear();
+        }
 
         void StartPlayback()
         {
@@ -354,6 +379,7 @@ namespace RaceBoot
             foreach (var cv in Resources.FindObjectsOfTypeAll<Canvas>())
                 if (cv.name == "press_start_canvas" && cv.gameObject.scene.isLoaded) pressStart = cv;
 
+            HideRealCars();
             director = new Director(last, this);
             Debug.Log($"[RaceBoot] replay: playing {last.Duration:F1} s");
         }
@@ -382,6 +408,7 @@ namespace RaceBoot
             cam = null;
             foreach (var c in muted) if (c) c.enabled = true;
             muted.Clear();
+            ShowRealCars();
             Debug.Log("[RaceBoot] replay: stopped");
         }
 
@@ -391,6 +418,7 @@ namespace RaceBoot
             float dt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
             t += dt;
             if (t > last.Duration) { t = last.Start; cursor = 0; director = new Director(last, this); }
+            if (Time.unscaledTime >= nextHide) HideRealCars();
             Apply(t);
             director?.Update(t, dt);
 

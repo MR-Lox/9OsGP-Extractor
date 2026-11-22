@@ -84,7 +84,7 @@ namespace RaceBoot
             var corners = new Vector3[4];
             foreach (var r in rt.GetComponentsInChildren<RectTransform>(true))
             {
-                if (r != rt && !r.GetComponent<CanvasRenderer>()) continue;
+                if (!r.GetComponent<CanvasRenderer>()) continue;
                 r.GetWorldCorners(corners);
                 foreach (var c in corners)
                 {

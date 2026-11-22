@@ -44,7 +44,11 @@ namespace RaceBoot
         {
             var outDir = Path.Combine(Dir, "showcase");
             Directory.CreateDirectory(outDir);
+            // Keep running (and out of the pause menu) if the window loses the focus meanwhile.
+            Application.runInBackground = true;
             yield return new WaitForSecondsRealtime(4f);
+            var pauseFsm = Fsm("GameManager", "pause");
+            if (pauseFsm) pauseFsm!.enabled = false;
 
             // Leave the attract screen ("PRESS START").
             Send(Fsm("GameManager", "race manager"), "FINISHED");
@@ -62,6 +66,7 @@ namespace RaceBoot
             Time.timeScale = 0f;
 
             int view = Settings.CameraView;
+            float gx = Settings.GaugeX, gy = Settings.GaugeY;
             var hidden = new HashSet<string>(Settings.HudHidden);
             var shots = new (string file, int view, int w, int h, bool hud)[]
             {
@@ -74,6 +79,8 @@ namespace RaceBoot
             {
                 Settings.CameraView = s.view;
                 Settings.HudHidden = s.hud ? new HashSet<string>(hidden) : new HashSet<string> { "Gauge", "Timer", "Position", "Laps", "LapTimes", "Messages", "Minimap" };
+                // Speedometer at the very bottom of the screen in every view (README shots).
+                Settings.GaugeX = 0f; Settings.GaugeY = -0.5f;
                 Screen.SetResolution(s.w, s.h, FullScreenMode.Windowed);
                 for (int i = 0; i < 20; i++) yield return null;
                 ScreenCapture.CaptureScreenshot(Path.Combine(outDir, s.file));
@@ -84,6 +91,7 @@ namespace RaceBoot
             // Pause menu check.
             Settings.CameraView = view;
             Settings.HudHidden = hidden;
+            Settings.GaugeX = gx; Settings.GaugeY = gy;
             Time.timeScale = 1f;
             var pause = Fsm("GameManager", "pause");
             if (pause) { pause!.enabled = true; Send(pause, "pause"); }
