@@ -23,6 +23,7 @@ et en fait un jeu autonome qui démarre directement sur la course, avec un vrai 
 | 🎥 **Nouvelles vues caméra** | Poursuite (vue d'origine), **Capot** et **Intérieure sans capot** (caméra au pare-chocs). |
 | 🖥️ **Affichage** | Plein écran, plein écran fenêtré ou fenêtré, au choix de la résolution. |
 | 🎨 **Graphismes** | Activez ou coupez le bezel de borne d'arcade, l'effet CRT, les contours noirs (cel shading), le post-traitement BD et la trame halftone sur les éclairages. |
+| 🎬 **Replay** | Après la course, l'écran « PRESS START » rejoue la course en boucle, avec un réalisateur automatique : caméras TV au bord de la piste, poursuite, hélico, capot… |
 | ⏸️ **Menu Pause épuré** | Fond transparent pour garder la course visible, entrée OPTIONS retirée (le menu F1 la remplace). |
 | 📊 **HUD personnalisable** | Compteur de vitesse déplaçable et redimensionnable à part, autres infos remontables, plaquées aux bords en écran large, ou masquées bloc par bloc. |
 | 🎮 **Contrôles** | Réassignation des touches clavier et manette. |
@@ -94,6 +95,15 @@ Relancer l'extracteur met à jour une extraction existante : seuls les fichiers 
 
 Les réglages sont enregistrés dans `9OsGP_settings.ini`, à côté de `9OsGP.exe`. Ils sont réappliqués au lancement, même si le jeu d'origine tente de remettre son propre mode d'affichage.
 
+### 🎬 Replay
+
+Pendant la course, la position de toutes les voitures (carrosserie, roues) est enregistrée 30 fois par seconde. Après l'arrivée (ou un Game Over), l'écran « PRESS START » rejoue la course en boucle jusqu'au lancement d'une nouvelle course :
+
+- **Réalisation automatique** : plans TV au bord de la piste qui suivent la voiture avec un zoom, poursuite, hélico, vue avant, vue de côté et vue capot.
+- **Plans propres** : un plan n'est retenu que si la voiture reste visible, sans mur entre elle et la caméra. Il est coupé si un obstacle s'interpose.
+- **Lancement d'une course** : appuyer sur START arrête le replay et lance une nouvelle course.
+- **Désactivation** : dans **F1 › Caméra › Replay de la course**.
+
 ### 🏎️ Volant, pédalier et retour de force
 
 Le jeu d'origine ne prévoit que la manette : sans configuration, un volant ne fait rien. Dans **F1 › Contrôles › Volant / pédalier**, choisissez votre volant puis lancez l'assistant :
@@ -126,6 +136,8 @@ L'extracteur ne modifie aucun code du jeu. Il :
 - il dessine le menu d'options (IMGUI) ;
 - il pilote les features du pipeline URP (contours, Beautify), les volumes de post-process (CRT, intensité de la « lens dirt » du bloom) et la caméra ;
 - il repositionne les blocs du canvas `90sGP_canvas/in_game` du HUD ;
+- pour le replay, il enregistre les poses des voitures et en garde des copies purement visuelles (sans physique ni scripts), rejouées sur l'écran titre avec sa propre caméra ;
+- il remet le chrono de course à 50 s à chaque départ (le jeu d'origine le laissait tourner sur l'écran titre) ;
 - il s'appuie sur Rewired pour la réassignation des contrôles. Pour un volant, il crée une configuration et une calibration d'axes dédiées : la voiture lit les actions `steer`, `handgun` (accélérateur) et `run` (frein / drift) en analogique ;
 - il pilote le retour de force par appels DirectInput 8 directs (ressort, amortisseur, force constante), sans dépendance externe.
 

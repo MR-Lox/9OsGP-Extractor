@@ -27,6 +27,7 @@ namespace RaceBoot
         public static bool HudGaugeLow = true;   // gauge at the bottom in the interior views
         public static float HudInfoY = 0f, GaugeX = 0f, GaugeY = 0f, GaugeScale = 1f;
         public static bool Ffb = true, FfbInvert;
+        public static bool ReplayEnabled = true;
         public static float FfbStrength = 0.7f, FfbCentering = 0.6f, FfbEffects = 0.6f;
         public static HashSet<string> HudHidden = new HashSet<string> { "Minimap" };
         public static bool HudShown(string key) => !HudHidden.Contains(key);
@@ -73,6 +74,7 @@ namespace RaceBoot
                     case "GaugeY": GaugeY = Mathf.Clamp(fl, -0.5f, 0.5f); break;
                     case "GaugeScale": if (fl > 0.1f) GaugeScale = fl; break;
                     case "Ffb": Ffb = b; break;
+                    case "Replay": ReplayEnabled = b; break;
                     case "FfbInvert": FfbInvert = b; break;
                     case "FfbStrength": FfbStrength = Mathf.Clamp01(fl); break;
                     case "FfbCentering": FfbCentering = Mathf.Clamp01(fl); break;
@@ -110,7 +112,7 @@ namespace RaceBoot
                     "HudScale=" + F(HudScale), "HudSpreadX=" + F(HudSpreadX), "HudSpreadY=" + F(HudSpreadY),
                     "HudMargin=" + F(HudMargin), "HudGaugeLow=" + (HudGaugeLow ? 1 : 0), "HudHidden=" + string.Join(",", HudHidden),
                     "HudInfoY=" + F(HudInfoY), "GaugeX=" + F(GaugeX), "GaugeY=" + F(GaugeY), "GaugeScale=" + F(GaugeScale),
-                    "Ffb=" + (Ffb ? 1 : 0), "FfbInvert=" + (FfbInvert ? 1 : 0), "FfbStrength=" + F(FfbStrength),
+                    "Ffb=" + (Ffb ? 1 : 0), "Replay=" + (ReplayEnabled ? 1 : 0), "FfbInvert=" + (FfbInvert ? 1 : 0), "FfbStrength=" + F(FfbStrength),
                     "FfbCentering=" + F(FfbCentering), "FfbEffects=" + F(FfbEffects),
                     "WheelDevice=" + Wheel.Device, "WheelSteerAxis=" + Wheel.SteerAxis, "WheelSteerCenter=" + F(Wheel.SteerCenter),
                     "WheelSteerInvert=" + (Wheel.SteerInvert ? 1 : 0), "WheelSteerSens=" + F(Wheel.SteerSens),
@@ -196,6 +198,7 @@ namespace RaceBoot
             SceneManager.sceneLoaded += (s, m) => { nextEnforce = 0f; displayFixes = 0; Halftone.Apply(Settings.LightHalftone, true); };
             CameraViews.Install();
             Hud.Install();
+            Replay.Install();
         }
 
         void OnApplicationQuit() => Ffb.Shutdown("arrêté");
@@ -481,6 +484,8 @@ namespace RaceBoot
                 if (GUILayout.Button(CameraViews.Names[i], Settings.CameraView == i ? toggleOn : toggleOff, GUILayout.Height(42 * s))) Settings.CameraView = i;
             GUILayout.EndHorizontal();
             GUILayout.Label("En course : touche C (clavier) ou bouton Y / Select (manette) pour changer de vue.", small);
+            GUILayout.Space(10 * s);
+            Settings.ReplayEnabled = Row("Replay de la course sur l'écran « PRESS START »", Settings.ReplayEnabled, s);
             GUILayout.Space(14 * s);
             GUILayout.Label("Réglages des vues intérieures", header);
             Settings.CamFov = Slider("Champ de vision", Settings.CamFov, 40f, 110f, "°", s);

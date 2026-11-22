@@ -73,8 +73,12 @@ namespace RaceBoot
             return true;
         }
 
+        // Hood camera position in car_body space (used by the replay director), null if the car is not available.
+        public static Vector3? HoodLocal() => Resolve() ? HoodPoint() : (Vector3?)null;
+
         static void BeforeRender()
         {
+            if (Replay.Playing) return;
             int view = Settings.CameraView;
             if (view == Chase || !Resolve())
             {

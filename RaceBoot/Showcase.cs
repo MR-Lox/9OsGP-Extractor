@@ -22,7 +22,7 @@ namespace RaceBoot
             go.AddComponent<Showcase>();
         }
 
-        static MonoBehaviour? Fsm(string owner, string name)
+        internal static MonoBehaviour? Fsm(string owner, string name)
         {
             foreach (var mb in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
                 if (mb && mb.gameObject.name == owner && mb.GetType().Name == "PlayMakerFSM"
@@ -31,9 +31,9 @@ namespace RaceBoot
             return null;
         }
 
-        static void Send(MonoBehaviour? fsm, string ev) => fsm?.GetType().GetMethod("SendEvent", new[] { typeof(string) })?.Invoke(fsm, new object[] { ev });
+        internal static void Send(MonoBehaviour? fsm, string ev) => fsm?.GetType().GetMethod("SendEvent", new[] { typeof(string) })?.Invoke(fsm, new object[] { ev });
 
-        static void SetFloat(MonoBehaviour fsm, string name, float v)
+        internal static void SetFloat(MonoBehaviour fsm, string name, float v)
         {
             var vars = fsm.GetType().GetProperty("FsmVariables")?.GetValue(fsm);
             var f = vars?.GetType().GetMethod("GetFsmFloat", new[] { typeof(string) })?.Invoke(vars, new object[] { name });
