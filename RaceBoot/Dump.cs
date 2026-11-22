@@ -103,6 +103,46 @@ namespace RaceBoot
             sb.AppendLine("=== DONTDESTROYONLOAD ===");
             foreach (var root in gameObject.scene.GetRootGameObjects()) Walk(root.transform, 0, sb);
 
+            sb.AppendLine("=== FSMS (race car + GameManager) ===");
+            foreach (var fsmComp in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
+            {
+                if (!fsmComp || fsmComp.GetType().Name != "PlayMakerFSM" || !fsmComp.gameObject.scene.IsValid()) continue;
+                var on = fsmComp.gameObject.name;
+                if (on != "race_car_01" && on != "car_body" && on != "GameManager") continue;
+                var fsm = fsmComp.GetType().GetProperty("Fsm")?.GetValue(fsmComp);
+                if (fsm == null) continue;
+                sb.AppendLine("FSM " + on + " :: " + fsmComp.GetType().GetProperty("FsmName")?.GetValue(fsmComp));
+                if (!(fsm.GetType().GetProperty("States")?.GetValue(fsm) is Array states)) continue;
+                foreach (var st in states)
+                {
+                    sb.AppendLine("  STATE " + P(st, "Name"));
+                    if (!(st.GetType().GetProperty("Actions")?.GetValue(st) is Array actions)) continue;
+                    foreach (var act in actions)
+                    {
+                        if (act == null) continue;
+                        var line = new StringBuilder("    " + act.GetType().Name + " {");
+                        foreach (var fi in act.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public))
+                        {
+                            var val = fi.GetValue(act);
+                            string txt;
+                            if (val == null) txt = "null";
+                            else if (val.GetType().Namespace == "HutongGames.PlayMaker")
+                            {
+                                var nm = P(val, "Name") as string;
+                                var v = P(val, "RawValue") ?? P(val, "Value");
+                                txt = (string.IsNullOrEmpty(nm) ? "" : "$" + nm + "=") + v;
+                            }
+                            else txt = val.ToString();
+                            line.Append(" " + fi.Name + "=" + txt + ";");
+                        }
+                        sb.AppendLine(line.Append(" }").ToString());
+                    }
+                }
+            }
+
+            sb.AppendLine("=== REWIRED ===");
+            try { DumpRewired(sb); } catch (Exception e) { sb.AppendLine("err " + e); }
+
             File.WriteAllText(System.IO.Path.Combine(Application.dataPath, "..", "scene_dump.txt"), sb.ToString());
             Debug.Log("[RaceBoot] scene dumped");
         }
@@ -130,6 +170,33 @@ namespace RaceBoot
                     }
                     else sb.AppendLine(indent + fi.Name + " = " + val);
                 }
+        }
+
+        static object? P(object o, string name)
+        {
+            foreach (var p in o.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+                if (p.Name == name && p.GetIndexParameters().Length == 0)
+                    try { return p.GetValue(o); } catch { return null; }
+            return null;
+        }
+
+        static void DumpRewired(StringBuilder sb)
+        {
+            if (!Rewired.ReInput.isReady) { sb.AppendLine("not ready"); return; }
+            foreach (var a in Rewired.ReInput.mapping.Actions)
+                sb.AppendLine($" action {a.id} {a.name} type={a.type} cat={a.categoryId}");
+            foreach (var j in Rewired.ReInput.controllers.Joysticks)
+                sb.AppendLine($" joystick {j.id} {j.name} axes={j.axisCount} buttons={j.buttonCount} guid={j.hardwareTypeGuid}");
+            foreach (var p in Rewired.ReInput.players.GetPlayers(true))
+            {
+                sb.AppendLine($" player {p.id} {p.name}");
+                foreach (var m in p.controllers.maps.GetAllMaps())
+                {
+                    sb.AppendLine($"  map {m.controllerType} ctrl={m.controllerId} cat={m.categoryId} layout={m.layoutId} enabled={m.enabled}");
+                    foreach (var aem in m.AllMaps)
+                        sb.AppendLine($"    {aem.actionDescriptiveName} <- {aem.elementIdentifierName} ({aem.elementType}, contrib={aem.axisContribution}, range={aem.axisRange}, inv={aem.invert})");
+                }
+            }
         }
 
         static string Path(Transform t) => t.parent ? Path(t.parent) + "/" + t.name : t.name;

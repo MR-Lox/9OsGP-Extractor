@@ -23,6 +23,14 @@ namespace RaceBoot
         public static bool LightHalftone = true;
         public static int CameraView = 0;
         public static float CamHeight = 0f, CamForward = 0f, CamPitch = 5f, CamFov = 70f;
+        public static float HudScale = 1f, HudSpreadX = 0f, HudSpreadY = 0f, HudMargin = 0.03f;
+        public static bool HudGaugeLow = true;   // gauge at the bottom in the interior views
+        public static float HudInfoY = 0f, GaugeX = 0f, GaugeY = 0f, GaugeScale = 1f;
+        public static bool Ffb = true, FfbInvert;
+        public static float FfbStrength = 0.7f, FfbCentering = 0.6f, FfbEffects = 0.6f;
+        public static HashSet<string> HudHidden = new HashSet<string> { "Minimap" };
+        public static bool HudShown(string key) => !HudHidden.Contains(key);
+        public static void SetHudShown(string key, bool v) { if (v) HudHidden.Remove(key); else HudHidden.Add(key); }
 
         static string FilePath => Path.Combine(Application.dataPath, "..", "9OsGP_settings.ini");
 
@@ -55,6 +63,35 @@ namespace RaceBoot
                     case "CamForward": CamForward = fl; break;
                     case "CamPitch": CamPitch = fl; break;
                     case "CamFov": if (fl > 10) CamFov = fl; break;
+                    case "HudScale": if (fl > 0.1f) HudScale = fl; break;
+                    case "HudSpreadX": HudSpreadX = Mathf.Clamp01(fl); break;
+                    case "HudSpreadY": HudSpreadY = Mathf.Clamp01(fl); break;
+                    case "HudMargin": HudMargin = Mathf.Clamp(fl, 0f, 0.2f); break;
+                    case "HudGaugeLow": HudGaugeLow = b; break;
+                    case "HudInfoY": HudInfoY = Mathf.Clamp(fl, -0.5f, 0.5f); break;
+                    case "GaugeX": GaugeX = Mathf.Clamp(fl, -0.5f, 0.5f); break;
+                    case "GaugeY": GaugeY = Mathf.Clamp(fl, -0.5f, 0.5f); break;
+                    case "GaugeScale": if (fl > 0.1f) GaugeScale = fl; break;
+                    case "Ffb": Ffb = b; break;
+                    case "FfbInvert": FfbInvert = b; break;
+                    case "FfbStrength": FfbStrength = Mathf.Clamp01(fl); break;
+                    case "FfbCentering": FfbCentering = Mathf.Clamp01(fl); break;
+                    case "FfbEffects": FfbEffects = Mathf.Clamp01(fl); break;
+                    case "WheelDevice": Wheel.Device = v; break;
+                    case "WheelSteerAxis": Wheel.SteerAxis = n; break;
+                    case "WheelSteerCenter": Wheel.SteerCenter = fl; break;
+                    case "WheelSteerInvert": Wheel.SteerInvert = b; break;
+                    case "WheelSteerSens": if (fl >= 1f) Wheel.SteerSens = fl; break;
+                    case "WheelAccelAxis": Wheel.AccelAxis = n; break;
+                    case "WheelAccelRest": Wheel.AccelRest = fl; break;
+                    case "WheelAccelFull": Wheel.AccelFull = fl; break;
+                    case "WheelBrakeAxis": Wheel.BrakeAxis = n; break;
+                    case "WheelBrakeRest": Wheel.BrakeRest = fl; break;
+                    case "WheelBrakeFull": Wheel.BrakeFull = fl; break;
+                    case "WheelPedalDeadZone": Wheel.PedalDeadZone = Mathf.Clamp(fl, 0f, 0.3f); break;
+                    case "WheelViewButton": Wheel.ViewButton = n; break;
+                    case "WheelMenuButton": Wheel.MenuButton = n; break;
+                    case "HudHidden": HudHidden = new HashSet<string>(v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim())); break;
                 }
             }
         }
@@ -70,6 +107,16 @@ namespace RaceBoot
                     "Beautify=" + (Beautify ? 1 : 0), "Crt=" + (Crt ? 1 : 0), "LightHalftone=" + (LightHalftone ? 1 : 0),
                     "CameraView=" + CameraView, "CamHeight=" + F(CamHeight), "CamForward=" + F(CamForward),
                     "CamPitch=" + F(CamPitch), "CamFov=" + F(CamFov),
+                    "HudScale=" + F(HudScale), "HudSpreadX=" + F(HudSpreadX), "HudSpreadY=" + F(HudSpreadY),
+                    "HudMargin=" + F(HudMargin), "HudGaugeLow=" + (HudGaugeLow ? 1 : 0), "HudHidden=" + string.Join(",", HudHidden),
+                    "HudInfoY=" + F(HudInfoY), "GaugeX=" + F(GaugeX), "GaugeY=" + F(GaugeY), "GaugeScale=" + F(GaugeScale),
+                    "Ffb=" + (Ffb ? 1 : 0), "FfbInvert=" + (FfbInvert ? 1 : 0), "FfbStrength=" + F(FfbStrength),
+                    "FfbCentering=" + F(FfbCentering), "FfbEffects=" + F(FfbEffects),
+                    "WheelDevice=" + Wheel.Device, "WheelSteerAxis=" + Wheel.SteerAxis, "WheelSteerCenter=" + F(Wheel.SteerCenter),
+                    "WheelSteerInvert=" + (Wheel.SteerInvert ? 1 : 0), "WheelSteerSens=" + F(Wheel.SteerSens),
+                    "WheelAccelAxis=" + Wheel.AccelAxis, "WheelAccelRest=" + F(Wheel.AccelRest), "WheelAccelFull=" + F(Wheel.AccelFull),
+                    "WheelBrakeAxis=" + Wheel.BrakeAxis, "WheelBrakeRest=" + F(Wheel.BrakeRest), "WheelBrakeFull=" + F(Wheel.BrakeFull),
+                    "WheelPedalDeadZone=" + F(Wheel.PedalDeadZone), "WheelViewButton=" + Wheel.ViewButton, "WheelMenuButton=" + Wheel.MenuButton,
                 });
             }
             catch (Exception e) { Debug.LogWarning("[RaceBoot] settings save failed: " + e.Message); }
@@ -81,7 +128,7 @@ namespace RaceBoot
             DisplayMode == 0 ? FullScreenMode.ExclusiveFullScreen :
             DisplayMode == 1 ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
 
-        public static void ApplyDisplay()
+        public static Vector2Int TargetSize()
         {
             int w = Width, h = Height;
             if (DisplayMode == 2)
@@ -92,8 +139,22 @@ namespace RaceBoot
                 float k = Mathf.Min(1f, native.width * 0.9f / w, native.height * 0.9f / h);
                 w = Mathf.RoundToInt(w * k); h = Mathf.RoundToInt(h * k);
             }
-            Screen.SetResolution(w, h, Mode);
+            return new Vector2Int(w, h);
+        }
+
+        public static void ApplyDisplay()
+        {
+            var t = TargetSize();
+            Screen.SetResolution(t.x, t.y, Mode);
             QualitySettings.vSyncCount = VSync ? 1 : 0;
+        }
+
+        // True when the window no longer matches the settings (the original game's own options
+        // re-apply their saved fullscreen / resolution when a scene loads).
+        public static bool DisplayDiffers()
+        {
+            var t = TargetSize();
+            return Screen.fullScreenMode != Mode || Mathf.Abs(Screen.width - t.x) > 2 || Mathf.Abs(Screen.height - t.y) > 2;
         }
     }
 
@@ -112,6 +173,7 @@ namespace RaceBoot
         Resolution[] resolutions = new Resolution[0];
         int resIndex;
         float nextEnforce;
+        int displayFixes;
         GUIStyle? title, header, label, button, toggleOn, toggleOff, box, small;
         Texture2D? bg, btnBg, btnHover, onBg;
         readonly Controls controls = new Controls();
@@ -129,9 +191,12 @@ namespace RaceBoot
             Settings.Load();
             Settings.ApplyDisplay();
             RefreshResolutions();
-            SceneManager.sceneLoaded += (s, m) => { nextEnforce = 0f; Halftone.Apply(Settings.LightHalftone, true); };
+            SceneManager.sceneLoaded += (s, m) => { nextEnforce = 0f; displayFixes = 0; Halftone.Apply(Settings.LightHalftone, true); };
             CameraViews.Install();
+            Hud.Install();
         }
+
+        void OnApplicationQuit() => Ffb.Shutdown("arrêté");
 
         void RefreshResolutions()
         {
@@ -149,9 +214,19 @@ namespace RaceBoot
             {
                 nextEnforce = Time.unscaledTime + 0.5f;
                 ApplyGraphics();
+                // A few attempts per scene only, so a mode the system refuses cannot cause endless flicker.
+                if (displayFixes < 6 && Settings.DisplayDiffers())
+                {
+                    displayFixes++;
+                    Debug.Log($"[RaceBoot] display reset by the game ({Screen.fullScreenMode} {Screen.width}x{Screen.height}), re-applying settings");
+                    Settings.ApplyDisplay();
+                }
             }
             controls.Update();
-            if (!open && Controls.GamepadBackPressed()) CameraViews.Cycle();
+            Wheel.Update();
+            Ffb.Tick(open);
+            if (!open && (Controls.GamepadBackPressed() || Wheel.ViewPressed())) CameraViews.Cycle();
+            if (Wheel.MenuPressed()) SetOpen(!open);
         }
 
         // ---------- graphics ----------
@@ -305,7 +380,7 @@ namespace RaceBoot
             GUILayout.Label("9OsGP — OPTIONS", title);
             GUILayout.Space(10 * s);
             GUILayout.BeginHorizontal();
-            string[] tabs = { "Affichage", "Graphismes", "Caméra", "Contrôles" };
+            string[] tabs = { "Affichage", "Graphismes", "Caméra", "HUD", "Contrôles" };
             for (int i = 0; i < tabs.Length; i++)
                 if (GUILayout.Button(tabs[i], i == tab ? toggleOn : toggleOff, GUILayout.Height(44 * s))) tab = i;
             GUILayout.EndHorizontal();
@@ -315,6 +390,7 @@ namespace RaceBoot
             if (tab == 0) DrawDisplay(s);
             else if (tab == 1) DrawGraphics(s);
             else if (tab == 2) DrawCamera(s);
+            else if (tab == 3) DrawHud(s);
             else controls.Draw(s, header!, label!, small!, button!, toggleOn!);
             GUILayout.EndScrollView();
 
@@ -406,6 +482,35 @@ namespace RaceBoot
             Settings.CamPitch = Slider("Inclinaison", Settings.CamPitch, -15f, 20f, "°", s);
             if (GUILayout.Button("Valeurs par défaut", button, GUILayout.Height(40 * s)))
             { Settings.CamFov = 70f; Settings.CamHeight = 0f; Settings.CamForward = 0f; Settings.CamPitch = 5f; }
+        }
+
+        void DrawHud(float s)
+        {
+            GUILayout.Label("Éléments affichés", header);
+            foreach (var g in Hud.Groups)
+                Settings.SetHudShown(g.Key, Row(g.Name, Settings.HudShown(g.Key), s));
+            if (Hud.MinimapAvailable)
+                Settings.SetHudShown("Minimap", Row("Mini-carte (cachée par les développeurs)", Settings.HudShown("Minimap"), s));
+            GUILayout.Space(10 * s);
+            GUILayout.Label("Compte-tours et vitesse", header);
+            Settings.GaugeScale = Slider("Taille", Settings.GaugeScale, 0.4f, 2f, "", s);
+            Settings.GaugeX = Slider("Position horizontale", Settings.GaugeX, -0.5f, 0.5f, "", s);
+            Settings.GaugeY = Slider("Position verticale", Settings.GaugeY, -0.5f, 0.5f, "", s);
+            Settings.HudGaugeLow = Row("En bas de l'écran en vue capot / intérieure", Settings.HudGaugeLow, s);
+            GUILayout.Space(8 * s);
+            GUILayout.Label("Autres informations (temps, position, tours)", header);
+            Settings.HudScale = Slider("Taille", Settings.HudScale, 0.5f, 1.5f, "", s);
+            Settings.HudInfoY = Slider("Hauteur", Settings.HudInfoY, -0.3f, 0.3f, "", s);
+            Settings.HudSpreadX = Slider("Écartement horizontal", Settings.HudSpreadX, 0f, 1f, "", s);
+            Settings.HudSpreadY = Slider("Écartement vertical", Settings.HudSpreadY, 0f, 1f, "", s);
+            Settings.HudMargin = Slider("Marge aux bords", Settings.HudMargin, 0f, 0.15f, "", s);
+            GUILayout.Label("Écartement à 1 : blocs plaqués contre les bords de l'écran (utile en 16:9 / 21:9). Hauteur positive = plus haut.", small);
+            if (GUILayout.Button("Valeurs par défaut", button, GUILayout.Height(40 * s)))
+            {
+                Settings.HudScale = 1f; Settings.HudSpreadX = 0f; Settings.HudSpreadY = 0f; Settings.HudMargin = 0.03f;
+                Settings.HudGaugeLow = true; Settings.HudHidden = new HashSet<string> { "Minimap" };
+                Settings.HudInfoY = 0f; Settings.GaugeX = 0f; Settings.GaugeY = 0f; Settings.GaugeScale = 1f;
+            }
         }
 
         void DrawGraphics(float s)

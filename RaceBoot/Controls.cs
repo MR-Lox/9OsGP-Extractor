@@ -101,14 +101,16 @@ namespace RaceBoot
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Clavier", deviceTab == 0 ? on : button, GUILayout.Height(40 * s))) { CancelRebind(); deviceTab = 0; }
             if (GUILayout.Button("Manette", deviceTab == 1 ? on : button, GUILayout.Height(40 * s))) { CancelRebind(); deviceTab = 1; }
+            if (GUILayout.Button("Volant / pédalier", deviceTab == 2 ? on : button, GUILayout.Height(40 * s))) { CancelRebind(); deviceTab = 2; }
             GUILayout.EndHorizontal();
             GUILayout.Space(8 * s);
+            if (deviceTab == 2) { Wheel.Draw(s, header, label, small, button, on); return; }
 
             ControllerType type = deviceTab == 0 ? ControllerType.Keyboard : ControllerType.Joystick;
             int controllerId = 0;
             if (type == ControllerType.Joystick)
             {
-                var joy = player.controllers.Joysticks.FirstOrDefault();
+                var joy = player.controllers.Joysticks.FirstOrDefault(x => x.GetTemplate<IGamepadTemplate>() != null) ?? player.controllers.Joysticks.FirstOrDefault();
                 if (joy == null) { GUILayout.Label("Aucune manette détectée.", label); DrawFooter(s, small, button, player); return; }
                 controllerId = joy.id;
                 GUILayout.Label(joy.name, small);
