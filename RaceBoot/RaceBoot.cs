@@ -22,7 +22,7 @@ namespace RaceBoot
         {
             Debug.Log("[RaceBoot] loaded " + scene.buildIndex + " " + scene.name + " " + mode);
             int i = scene.buildIndex;
-            if (i == RaceScene) { SceneDumper.Run(); return; }
+            if (i == RaceScene) { SceneDumper.Run(); Showcase.Run(); return; }
             if (mode == LoadSceneMode.Additive) return;
             if (i == IntroScene && !RaceBootConfig.SkipIntro) return;
             // Intro (Takeover 2 logos) and the end-of-race loading screen are skipped as well:

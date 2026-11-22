@@ -154,7 +154,9 @@ namespace RaceBoot
         public static bool DisplayDiffers()
         {
             var t = TargetSize();
-            return Screen.fullScreenMode != Mode || Mathf.Abs(Screen.width - t.x) > 2 || Mathf.Abs(Screen.height - t.y) > 2;
+            if (Screen.fullScreenMode != Mode) return true;
+            // A window may be clamped by Windows to the work area: only check the size of the fullscreen modes.
+            return DisplayMode != 2 && (Mathf.Abs(Screen.width - t.x) > 2 || Mathf.Abs(Screen.height - t.y) > 2);
         }
     }
 
@@ -209,6 +211,10 @@ namespace RaceBoot
 
         void Update()
         {
+            // The pause FSM of the race switches the arcade bezel on: keep it as configured, every frame.
+            var bezel = FindAnywhere("crt_frame");
+            if (bezel && bezel!.activeSelf != Settings.Bezel) bezel.SetActive(Settings.Bezel);
+
             // Re-apply the graphics toggles regularly: the game's own FSMs may reset them.
             if (Time.unscaledTime >= nextEnforce)
             {
@@ -224,6 +230,7 @@ namespace RaceBoot
             }
             controls.Update();
             Wheel.Update();
+            PauseMenu.Tick();
             Ffb.Tick(open);
             if (!open && (Controls.GamepadBackPressed() || Wheel.ViewPressed())) CameraViews.Cycle();
             if (Wheel.MenuPressed()) SetOpen(!open);

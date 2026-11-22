@@ -170,6 +170,12 @@ namespace RaceBoot
                     target = new Vector2(Mathf.Lerp(c.x, fx, Settings.HudSpreadX), Mathf.Lerp(c.y, fy, Settings.HudSpreadY) + Settings.HudInfoY * area.height);
                 }
 
+                // Very wide screens leave less height to the canvas: keep every block inside the screen.
+                if (g.Movable)
+                    target = new Vector2(
+                        ClampInside(target.x, size.x, area.xMin + margin, area.xMax - margin),
+                        ClampInside(target.y, size.y, area.yMin + margin, area.yMax - margin));
+
                 bool shown = Settings.HudShown(g.Key);
                 foreach (var rt in g.Rts)
                 {
@@ -195,6 +201,12 @@ namespace RaceBoot
                 if (want && !minimap!.activeSelf) { minimap.SetActive(true); minimapForced = true; }
                 else if (!want && minimapForced) { minimap!.SetActive(false); minimapForced = false; }
             }
+        }
+
+        static float ClampInside(float centre, float size, float min, float max)
+        {
+            if (size >= max - min) return (min + max) / 2f;
+            return Mathf.Clamp(centre, min + size / 2f, max - size / 2f);
         }
 
         // Centre of a group when spread to the screen edges: its relative position inside the HUD

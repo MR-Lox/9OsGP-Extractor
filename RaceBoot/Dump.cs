@@ -108,7 +108,7 @@ namespace RaceBoot
             {
                 if (!fsmComp || fsmComp.GetType().Name != "PlayMakerFSM" || !fsmComp.gameObject.scene.IsValid()) continue;
                 var on = fsmComp.gameObject.name;
-                if (on != "race_car_01" && on != "car_body" && on != "GameManager") continue;
+                if (on != "race_car_01" && on != "car_body" && on != "GameManager" && on != "PAUSE" && on != "crt_canvas" && on != "press_start_canvas") continue;
                 var fsm = fsmComp.GetType().GetProperty("Fsm")?.GetValue(fsmComp);
                 if (fsm == null) continue;
                 sb.AppendLine("FSM " + on + " :: " + fsmComp.GetType().GetProperty("FsmName")?.GetValue(fsmComp));
@@ -126,6 +126,12 @@ namespace RaceBoot
                             var val = fi.GetValue(act);
                             string txt;
                             if (val == null) txt = "null";
+                            else if (val.GetType().Name == "FsmOwnerDefault")
+                            {
+                                var go = P(val, "GameObject");
+                                var gov = go != null ? P(go, "Value") as GameObject : null;
+                                txt = P(val, "OwnerOption") + ":" + (gov ? gov!.name : "");
+                            }
                             else if (val.GetType().Namespace == "HutongGames.PlayMaker")
                             {
                                 var nm = P(val, "Name") as string;
@@ -145,6 +151,14 @@ namespace RaceBoot
 
             File.WriteAllText(System.IO.Path.Combine(Application.dataPath, "..", "scene_dump.txt"), sb.ToString());
             Debug.Log("[RaceBoot] scene dumped");
+
+            // Optional visual check of the pause menu: opens it and saves a screenshot.
+            if (File.Exists(System.IO.Path.Combine(Application.dataPath, "..", "test_pause.txt")))
+            {
+                PauseMenu.OpenForTest();
+                yield return new WaitForSecondsRealtime(1.5f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(Application.dataPath, "..", "test_pause.png"));
+            }
         }
 
         static void DumpFields(object obj, StringBuilder sb, string indent, int depth)

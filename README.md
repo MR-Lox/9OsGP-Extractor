@@ -7,7 +7,7 @@
 Un seul `.exe` à lancer : il extrait le mini-jeu bonus *9OsGP* de votre installation de Takeover 2
 et en fait un jeu autonome qui démarre directement sur la course, avec un vrai menu d'options.
 
-![Vue poursuite](docs/chase.jpg)
+![9OsGP sans HUD](docs/sans_hud.jpg)
 
 [**⬇️ Télécharger la dernière version**](../../releases/latest)
 
@@ -23,6 +23,7 @@ et en fait un jeu autonome qui démarre directement sur la course, avec un vrai 
 | 🎥 **Nouvelles vues caméra** | Poursuite (vue d'origine), **Capot** et **Intérieure sans capot** (caméra au pare-chocs). |
 | 🖥️ **Affichage** | Plein écran, plein écran fenêtré ou fenêtré, au choix de la résolution. |
 | 🎨 **Graphismes** | Activez ou coupez le bezel de borne d'arcade, l'effet CRT, les contours noirs (cel shading), le post-traitement BD et la trame halftone sur les éclairages. |
+| ⏸️ **Menu Pause épuré** | Fond transparent pour garder la course visible, entrée OPTIONS retirée (le menu F1 la remplace). |
 | 📊 **HUD personnalisable** | Compteur de vitesse déplaçable et redimensionnable à part, autres infos remontables, plaquées aux bords en écran large, ou masquées bloc par bloc. |
 | 🎮 **Contrôles** | Réassignation des touches clavier et manette. |
 | 🏎️ **Volant et pédalier** | Assistant de configuration (direction, accélérateur et frein progressifs, boutons) et **retour de force** DirectInput. |
@@ -30,8 +31,21 @@ et en fait un jeu autonome qui démarre directement sur la course, avec un vrai 
 
 <div align="center">
 
-![Vue capot](docs/hood.jpg)<br>
-<sub>Vue capot</sub>
+## 📸 Vues et HUD selon la résolution
+
+Le HUD s'adapte au format de l'écran : les infos se plaquent contre les bords et le compteur se place à part.
+
+![Vue extérieure en 1920×1080](docs/exterieur_1920x1080.jpg)<br>
+<sub>Vue extérieure — 1920×1080 (16:9)</sub>
+
+![Vue intérieure en 2560×1080](docs/interieur_2560x1080.jpg)<br>
+<sub>Vue intérieure sans capot — 2560×1080 (21:9)</sub>
+
+![Vue capot en 3440×1080](docs/capot_3440x1080.jpg)<br>
+<sub>Vue capot — 3440×1080 (32:10)</sub>
+
+![Menu pause transparent](docs/pause.jpg)<br>
+<sub>Menu Pause : fond transparent, sans l'entrée OPTIONS</sub>
 
 </div>
 
