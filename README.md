@@ -119,19 +119,31 @@ Après START, trois plans se rapprochent de la voiture, puis la caméra rejoint 
 
 Le jeu d'origine ne prévoit que la manette : sans configuration, un volant ne fait rien. Dans **F1 › Contrôles › Volant / pédalier**, choisissez votre volant puis lancez l'assistant :
 
-1. Volant au centre, pédales relâchées.
+1. Pédales relâchées.
 2. Tournez le volant à fond à droite.
-3. Enfoncez l'accélérateur à fond.
-4. Enfoncez le frein à fond.
-5. Choisissez le bouton pour changer de vue (facultatif).
-6. Choisissez le bouton pour ouvrir le menu (facultatif).
+3. Tournez le volant à fond à gauche : le centre est calculé entre les deux butées.
+4. Enfoncez l'accélérateur à fond.
+5. Enfoncez le frein à fond.
+6. Choisissez le bouton pour changer de vue (facultatif).
+7. Choisissez le bouton pour ouvrir le menu (facultatif).
+8. Choisissez le bouton START, pour lancer une course et mettre en pause (facultatif).
 
 Bon à savoir :
 
 - Les axes sont détectés et calibrés automatiquement : position de repos, pédales inversées, accélérateur et frein sur un axe commun.
 - Les pédales sont **progressives**. Le frein déclenche aussi le drift, comme la gâchette gauche de la manette.
-- Réglages disponibles : **sensibilité de la direction** (2 = braquage maximal à mi-course, pratique pour les volants 900°), zone morte des pédales, inversion de la direction. Les axes sont affichés en direct.
+- Le volant n'est utilisé que par ces réglages : ses boutons ne déclenchent plus la pause du jeu par erreur.
+- Réglages disponibles : **sensibilité de la direction** (2 = braquage maximal à mi-course, pratique pour les volants 900°), zone morte des pédales, inversion de la direction, et un bouton pour **recentrer** le volant. Seuls les axes utilisés sont affichés en direct.
 - **Retour de force** (DirectInput) : rappel au centre qui se durcit avec la vitesse, poids du volant à l'arrêt, forces latérales en glisse et à-coups lors des chocs. Force générale, rappel au centre et effets se règlent séparément, et le sens peut être inversé. La ligne « État » indique quel volant est utilisé.
+
+### 💡 Sorties façon MAME (bornes d'arcade)
+
+Comme le protocole réseau de MAME, le jeu publie l'état des voyants sur le port TCP 8000 (local) : `mame_start = 9osgp`, puis des lignes `nom = valeur`. Les logiciels comme MameHooker, LEDBlinky ou DOFLinx peuvent ainsi piloter les boutons lumineux d'une borne :
+
+- `start_lamp` : clignote pendant l'attract (replay, GAME OVER, « PRESS START »), éteint en course ;
+- `view_lamp` : allumé pendant la course.
+
+Désactivable dans **F1 › Contrôles › Volant / pédalier**.
 
 ## 🔧 Comment ça marche
 

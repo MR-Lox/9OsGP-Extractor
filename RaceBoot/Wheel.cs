@@ -15,8 +15,9 @@ namespace RaceBoot
     {
         // ---- configuration (saved in the ini) ----
         public static string Device = "";
-        public static int SteerAxis = -1, AccelAxis = -1, BrakeAxis = -1, ViewButton = -1, MenuButton = -1;
+        public static int SteerAxis = -1, AccelAxis = -1, BrakeAxis = -1, ViewButton = -1, MenuButton = -1, StartButton = -1;
         public static float SteerCenter, AccelRest, AccelFull, BrakeRest, BrakeFull;
+        public static float SteerHalf = 1f;     // raw distance from the centre to a full lock (measured by the wizard)
         public static bool SteerInvert;
         public static float SteerSens = 1.5f;    // 1 = full lock needs the whole wheel rotation
         public static float PedalDeadZone = 0.04f;
@@ -61,12 +62,20 @@ namespace RaceBoot
             if (player == null) return;
             if (!player.controllers.ContainsController(j)) player.controllers.AddController(j, false);
 
+            // The wheel belongs to player 1 only (the game also listens to "start" on player 2, so a wheel
+            // auto-assigned there paused the race with its buttons).
+            foreach (var p in ReInput.players.Players)
+                if (p.id != 0 && p.controllers.ContainsController(j)) p.controllers.RemoveController(j);
+
             var maps = player.controllers.maps;
             var map = maps.GetMap(ControllerType.Joystick, j.id, 0, 0);
             if (map == null) { maps.AddEmptyMap(ControllerType.Joystick, j.id, 0, 0); map = maps.GetMap(ControllerType.Joystick, j.id, 0, 0); }
             if (map == null) return;
             map.ClearElementMaps();
             map.enabled = true;
+            // Only our bindings: the other (default) maps of the wheel could bind its buttons to "start" etc.
+            foreach (var other in maps.GetMaps(ControllerType.Joystick, j.id))
+                if (other != map) other.enabled = false;
 
             var cal = j.calibrationMap;
             for (int i = 0; i < j.axisCount; i++) cal.GetAxis(i).applyRangeCalibration = false;
@@ -74,20 +83,24 @@ namespace RaceBoot
             // Steering: centre captured by the wizard, range shortened by the sensitivity.
             if (SteerAxis < j.axisCount)
             {
-                float range = 1f / Mathf.Max(1f, SteerSens);
+                float range = Mathf.Max(0.05f, SteerHalf) / Mathf.Max(1f, SteerSens);
                 var c = cal.GetAxis(SteerAxis);
                 c.applyRangeCalibration = true;
                 c.calibratedZero = SteerCenter;
                 c.calibratedMin = SteerCenter - range;
                 c.calibratedMax = SteerCenter + range;
                 c.invert = SteerInvert;
-                c.deadZone = 0f;
+                c.deadZone = 0.01f;
                 map.CreateElementMap(ActionId("steer"), Pole.Positive, j.AxisElementIdentifiers[SteerAxis].id, ControllerElementType.Axis, AxisRange.Full, false);
             }
 
             // Pedals: zero = released position; the pressed side is mapped to a positive action value.
             MapPedal(j, map, cal, AccelAxis, AccelRest, AccelFull, ActionId("handgun"));
             MapPedal(j, map, cal, BrakeAxis, BrakeRest, BrakeFull, ActionId("run"));
+
+            // START button of the wheel: the game's own "start" action (title screen, pause).
+            if (StartButton >= 0 && StartButton < j.buttonCount && ActionId("start") >= 0)
+                map.CreateElementMap(ActionId("start"), Pole.Positive, j.ButtonElementIdentifiers[StartButton].id, ControllerElementType.Button, AxisRange.Full, false);
             Debug.Log("[RaceBoot] wheel map applied to " + j.hardwareName + " (" + map.elementMapCount + " bindings)");
         }
 
@@ -113,11 +126,14 @@ namespace RaceBoot
 
         // ---------------- wizard + UI ----------------
 
-        static int step;            // 0 = idle, 1 rest, 2 steer, 3 throttle, 4 brake, 5 view button, 6 menu button
+        // 0 = idle, 1 rest, 2 steer right, 3 steer left, 4 throttle, 5 brake, 6 view button, 7 menu button, 8 start button
+        static int step;
+        const int Steps = 8;
         static int selected = -1;   // joystick id
         static float[] rest = new float[0], extreme = new float[0];
         static int wSteer, wAccel, wBrake;
-        static float wSteerSign, wAccelFull, wBrakeFull;
+        static float wSteerRight, wSteerLeft, wAccelFull, wBrakeFull;
+        static float[] seenMin = new float[0], seenMax = new float[0];
 
         static Joystick? Selected()
         {
@@ -157,14 +173,28 @@ namespace RaceBoot
 
             GUILayout.Space(10 * s);
             GUILayout.Label(L.T("Axes en direct"), header);
+            // Only the axes in use or that moved: a wheel can report ~30 axes, three of them matter.
+            if (seenMin.Length != j.axisCount || seenFor != j.id)
+            {
+                seenFor = j.id;
+                seenMin = new float[j.axisCount]; seenMax = new float[j.axisCount];
+                for (int i = 0; i < j.axisCount; i++) seenMin[i] = seenMax[i] = Raw(j, i);
+            }
+            int shown = 0;
             for (int i = 0; i < j.axisCount; i++)
             {
+                float rv = Raw(j, i);
+                seenMin[i] = Mathf.Min(seenMin[i], rv); seenMax[i] = Mathf.Max(seenMax[i], rv);
+                bool used = isConfigured && (i == SteerAxis || i == AccelAxis || i == BrakeAxis);
+                if (!used && seenMax[i] - seenMin[i] < 0.15f) continue;
+                shown++;
                 GUILayout.BeginHorizontal();
                 string role = i == SteerAxis && isConfigured ? L.T(" (direction)") : i == AccelAxis && isConfigured ? L.T(" (accélérateur)") : i == BrakeAxis && isConfigured ? L.T(" (frein)") : "";
                 GUILayout.Label(j.AxisElementIdentifiers[i].name + role, small, GUILayout.Width(300 * s));
-                GUILayout.HorizontalSlider(Raw(j, i), -1f, 1f, GUILayout.Height(24 * s));
+                GUILayout.HorizontalSlider(rv, -1f, 1f, GUILayout.Height(24 * s));
                 GUILayout.EndHorizontal();
             }
+            if (shown == 0) GUILayout.Label(L.T("Bougez le volant et les pédales : seuls les axes utilisés s'affichent."), small);
 
             if (isConfigured)
             {
@@ -177,15 +207,23 @@ namespace RaceBoot
                 GUILayout.Space(6 * s);
                 bool v = SteerInvert;
                 if (ToggleRow(L.T("Inverser la direction"), ref v, label, button, on, s)) { SteerInvert = v; Apply(); }
+                if (SteerAxis < j.axisCount && GUILayout.Button(L.T("Recentrer : volant droit, puis cliquez ici"), button, GUILayout.Height(38 * s)))
+                { SteerCenter = Raw(j, SteerAxis); Apply(); Settings.Save(); }
                 if (GUILayout.Button(L.T("Oublier ce volant"), button, GUILayout.Height(38 * s)))
                 {
                     var player = ReInput.players.GetPlayer(0);
                     player?.controllers.maps.GetMap(ControllerType.Joystick, j.id, 0, 0)?.ClearElementMaps();
                     j.calibrationMap.Reset();
-                    Device = ""; SteerAxis = AccelAxis = BrakeAxis = ViewButton = MenuButton = -1;
+                    Device = ""; SteerAxis = AccelAxis = BrakeAxis = ViewButton = MenuButton = StartButton = -1;
                     Settings.Save();
                 }
             }
+
+            GUILayout.Space(14 * s);
+            GUILayout.Label(L.T("Sorties façon MAME (réseau, port 8000)"), header);
+            bool mame = Settings.MameOutputs;
+            if (ToggleRow(L.T("Sorties façon MAME (réseau, port 8000)"), ref mame, label, button, on, s)) { Settings.MameOutputs = mame; Settings.Save(); }
+            GUILayout.Label(L.T("Bouton Start qui clignote pendant l'attract, voyant de vue en course (MameHooker, LEDBlinky…)."), small);
 
             GUILayout.Space(14 * s);
             GUILayout.Label(L.T("Retour de force"), header);
@@ -199,6 +237,8 @@ namespace RaceBoot
             GUILayout.Label(L.T("État : ") + Ffb.Status, small);
         }
 
+        static int seenFor = -1;
+
         static void DrawWizard(Joystick j, float s, GUIStyle header, GUIStyle label, GUIStyle small, GUIStyle button, GUIStyle on)
         {
             int n = j.axisCount;
@@ -209,54 +249,71 @@ namespace RaceBoot
 
             if (step == 1)
             {
-                title = L.T("1/6 — Position de repos");
-                hint = L.T("Volant au centre, pieds levés des pédales, puis cliquez sur Valider.");
+                title = L.T("Position de repos");
+                hint = L.T("Pieds levés des pédales, puis cliquez sur Valider.");
                 canValidate = true;
             }
-            else if (step >= 2 && step <= 4)
+            else if (step == 2 || step == 3)
             {
-                title = step == 2 ? L.T("2/6 — Tournez le volant à fond vers la DROITE") : step == 3 ? L.T("3/6 — Enfoncez l'ACCÉLÉRATEUR à fond") : L.T("4/6 — Enfoncez le FREIN à fond");
+                // Both full locks: the centre is their middle, whatever the position of the wheel at rest.
+                title = step == 2 ? L.T("Tournez le volant à fond vers la DROITE") : L.T("Tournez le volant à fond vers la GAUCHE");
                 hint = L.T("Maintenez la position, puis cliquez sur Valider.");
                 float bestDelta = 0f;
                 for (int i = 0; i < n; i++)
                 {
                     float d = Raw(j, i) - rest[i];
                     if (Mathf.Abs(d) > Mathf.Abs(extreme[i] - rest[i])) extreme[i] = Raw(j, i);
-                    if (step >= 3 && i == wSteer) continue;
+                    if (step == 3 && i != wSteer) continue;
+                    if (Mathf.Abs(d) > bestDelta) { bestDelta = Mathf.Abs(d); best = i; }
+                }
+                bool opposite = step == 2 || Mathf.Sign(Raw(j, wSteer) - rest[wSteer]) != Mathf.Sign(wSteerRight - rest[wSteer]);
+                canValidate = best >= 0 && bestDelta > 0.3f && opposite;
+                hint += canValidate ? L.T("   Détecté : ") + j.AxisElementIdentifiers[best].name : L.T("   (en attente d'un mouvement…)");
+            }
+            else if (step == 4 || step == 5)
+            {
+                title = step == 4 ? L.T("Enfoncez l'ACCÉLÉRATEUR à fond") : L.T("Enfoncez le FREIN à fond");
+                hint = L.T("Maintenez la position, puis cliquez sur Valider.");
+                float bestDelta = 0f;
+                for (int i = 0; i < n; i++)
+                {
+                    float d = Raw(j, i) - rest[i];
+                    if (Mathf.Abs(d) > Mathf.Abs(extreme[i] - rest[i])) extreme[i] = Raw(j, i);
+                    if (i == wSteer) continue;
                     // Brake may share the throttle axis only in the opposite direction (combined pedals).
-                    if (step == 4 && i == wAccel && Mathf.Sign(d) == Mathf.Sign(wAccelFull - rest[i])) continue;
+                    if (step == 5 && i == wAccel && Mathf.Sign(d) == Mathf.Sign(wAccelFull - rest[i])) continue;
                     if (Mathf.Abs(d) > bestDelta) { bestDelta = Mathf.Abs(d); best = i; }
                 }
                 canValidate = best >= 0 && bestDelta > 0.4f;
-                canSkip = step == 4;
+                canSkip = step == 5;
                 hint += canValidate ? L.T("   Détecté : ") + j.AxisElementIdentifiers[best].name : L.T("   (en attente d'un mouvement…)");
             }
-            else if (step == 5 || step == 6)
+            else
             {
-                title = step == 5 ? L.T("5/6 — Bouton « changer de vue »") : L.T("6/6 — Bouton « menu des options »");
+                title = step == 6 ? L.T("Bouton « changer de vue »") : step == 7 ? L.T("Bouton « menu des options »") : L.T("Bouton « START » (départ, pause)");
                 hint = L.T("Appuyez sur le bouton du volant à utiliser, ou cliquez sur Passer.");
                 canSkip = true;
                 for (int b = 0; b < j.buttonCount; b++)
                     if (j.GetButtonDown(b))
                     {
-                        if (step == 5) ViewButtonPending = b; else MenuButtonPending = b;
+                        if (step == 6) ViewButtonPending = b; else if (step == 7) MenuButtonPending = b; else StartButtonPending = b;
                         Next(j, -1);
                         return;
                     }
             }
 
-            GUILayout.Label(title, header);
+            GUILayout.Label(step + "/" + Steps + " — " + title, header);
             GUILayout.Label(hint, label);
             GUILayout.BeginHorizontal();
             GUI.enabled = canValidate;
-            if (step <= 4 && GUILayout.Button(L.T("Valider"), on, GUILayout.Height(42 * s))) Next(j, best);
+            if (step <= 5 && GUILayout.Button(L.T("Valider"), on, GUILayout.Height(42 * s))) Next(j, best);
             GUI.enabled = true;
             if (canSkip && GUILayout.Button(L.T("Passer"), button, GUILayout.Height(42 * s))) Next(j, -1);
             if (GUILayout.Button(L.T("Annuler"), button, GUILayout.Height(42 * s), GUILayout.Width(160 * s))) step = 0;
             GUILayout.EndHorizontal();
         }
 
-        static int ViewButtonPending = -1, MenuButtonPending = -1;
+        static int ViewButtonPending = -1, MenuButtonPending = -1, StartButtonPending = -1;
 
         static void Next(Joystick j, int axis)
         {
@@ -264,27 +321,29 @@ namespace RaceBoot
             {
                 case 1:
                     for (int i = 0; i < rest.Length; i++) { rest[i] = Raw(j, i); extreme[i] = rest[i]; }
-                    wSteer = wAccel = wBrake = -1; ViewButtonPending = MenuButtonPending = -1;
+                    wSteer = wAccel = wBrake = -1; ViewButtonPending = MenuButtonPending = StartButtonPending = -1;
                     break;
-                case 2: wSteer = axis; wSteerSign = Mathf.Sign(extreme[axis] - rest[axis]); break;
-                case 3: wAccel = axis; wAccelFull = extreme[axis]; break;
-                case 4: wBrake = axis; wBrakeFull = axis >= 0 ? extreme[axis] : 0f; break;
+                case 2: wSteer = axis; wSteerRight = extreme[axis]; break;
+                case 3: wSteerLeft = extreme[wSteer]; break;
+                case 4: wAccel = axis; wAccelFull = extreme[axis]; break;
+                case 5: wBrake = axis; wBrakeFull = axis >= 0 ? extreme[axis] : 0f; break;
             }
-            if (step == 3 || step == 4)
-                for (int i = 0; i < rest.Length; i++) extreme[i] = rest[i];
             step++;
-            if (step == 3 || step == 4) for (int i = 0; i < rest.Length; i++) extreme[i] = rest[i];
-            if (step > 6) Finish(j);
+            if (step >= 2 && step <= 5) for (int i = 0; i < rest.Length; i++) extreme[i] = rest[i];
+            if (step > Steps) Finish(j);
         }
 
         static void Finish(Joystick j)
         {
             step = 0;
             Device = j.hardwareName;
-            SteerAxis = wSteer; SteerCenter = rest[wSteer]; SteerInvert = wSteerSign < 0;
+            SteerAxis = wSteer;
+            SteerCenter = (wSteerRight + wSteerLeft) * 0.5f;
+            SteerHalf = Mathf.Abs(wSteerRight - wSteerLeft) * 0.5f;
+            SteerInvert = wSteerRight < wSteerLeft;
             AccelAxis = wAccel; AccelRest = wAccel >= 0 ? rest[wAccel] : 0f; AccelFull = wAccelFull;
             BrakeAxis = wBrake; BrakeRest = wBrake >= 0 ? rest[wBrake] : 0f; BrakeFull = wBrakeFull;
-            ViewButton = ViewButtonPending; MenuButton = MenuButtonPending;
+            ViewButton = ViewButtonPending; MenuButton = MenuButtonPending; StartButton = StartButtonPending;
             Apply();
             Settings.Save();
         }

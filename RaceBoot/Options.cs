@@ -29,6 +29,7 @@ namespace RaceBoot
         public static bool Ffb = true, FfbInvert;
         public static bool ReplayEnabled = true;
         public static bool IntroEnabled = true;
+        public static bool MameOutputs = true;
         public static float VolMaster = 1f, VolMusic = 1f, VolEngine = 1f, VolFx = 1f;
         public static string Soundtrack = GameAudio.Original;
         public static float FfbStrength = 0.7f, FfbCentering = 0.6f, FfbEffects = 0.6f;
@@ -105,6 +106,9 @@ namespace RaceBoot
                     case "WheelPedalDeadZone": Wheel.PedalDeadZone = Mathf.Clamp(fl, 0f, 0.3f); break;
                     case "WheelViewButton": Wheel.ViewButton = n; break;
                     case "WheelMenuButton": Wheel.MenuButton = n; break;
+                    case "WheelStartButton": Wheel.StartButton = n; break;
+                    case "WheelSteerHalf": if (fl > 0.01f) Wheel.SteerHalf = fl; break;
+                    case "MameOutputs": MameOutputs = b; break;
                     case "HudHidden": HudHidden = new HashSet<string>(v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim())); break;
                 }
             }
@@ -132,6 +136,7 @@ namespace RaceBoot
                     "WheelAccelAxis=" + Wheel.AccelAxis, "WheelAccelRest=" + F(Wheel.AccelRest), "WheelAccelFull=" + F(Wheel.AccelFull),
                     "WheelBrakeAxis=" + Wheel.BrakeAxis, "WheelBrakeRest=" + F(Wheel.BrakeRest), "WheelBrakeFull=" + F(Wheel.BrakeFull),
                     "WheelPedalDeadZone=" + F(Wheel.PedalDeadZone), "WheelViewButton=" + Wheel.ViewButton, "WheelMenuButton=" + Wheel.MenuButton,
+                    "WheelStartButton=" + Wheel.StartButton, "WheelSteerHalf=" + F(Wheel.SteerHalf), "MameOutputs=" + (MameOutputs ? 1 : 0),
                 });
             }
             catch (Exception e) { Debug.LogWarning("[RaceBoot] settings save failed: " + e.Message); }
@@ -283,6 +288,7 @@ namespace RaceBoot
             FreeCam.Install();
             Arcade.Install();
             GameAudio.Install();
+            MameOutputs.Install();
             CameraViews.Install();
             Hud.Install();
             Replay.Install();

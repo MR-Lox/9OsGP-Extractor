@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
@@ -35,6 +37,7 @@ namespace RaceBoot
             var pauseFsm = Showcase.Fsm("GameManager", "pause");
             if (pauseFsm) pauseFsm!.enabled = false;
             if (mode == "f9") { yield return F9Test(); Application.Quit(); yield break; }
+            if (mode == "shaders") { ShaderDump(); Application.Quit(); yield break; }
             if (mode == "quit") { yield return QuitTest(); Application.Quit(); yield break; }
             if (mode == "audio") { yield return AudioTest(); Application.Quit(); yield break; }
             if (mode == "intro") { yield return IntroTest(); Application.Quit(); yield break; }
@@ -457,6 +460,45 @@ namespace RaceBoot
         }
 
         static Type[] SafeTypes(System.Reflection.Assembly a) { try { return a.GetTypes(); } catch { return new Type[0]; } }
+
+        // Shaders of the scenery and their halftone-like settings.
+        static void ShaderDump()
+        {
+            var sb = new StringBuilder();
+            var byShader = new Dictionary<string, List<Material>>();
+            foreach (var r in Resources.FindObjectsOfTypeAll<Renderer>())
+            {
+                if (!r || !r.gameObject.scene.isLoaded) continue;
+                foreach (var m in r.sharedMaterials)
+                {
+                    if (!m || !m.shader) continue;
+                    if (!byShader.TryGetValue(m.shader.name, out var l)) byShader[m.shader.name] = l = new List<Material>();
+                    if (!l.Contains(m)) l.Add(m);
+                }
+            }
+            foreach (var kv in byShader.OrderByDescending(k => k.Value.Count))
+            {
+                var sh = kv.Value[0].shader;
+                sb.AppendLine($"SHADER {kv.Key}  ({kv.Value.Count} materials)");
+                for (int i = 0; i < sh.GetPropertyCount(); i++)
+                    sb.AppendLine($"   prop {sh.GetPropertyName(i)} ({sh.GetPropertyType(i)}) {sh.GetPropertyDescription(i)}");
+                foreach (var m in kv.Value.Take(6))
+                {
+                    sb.Append($"   mat {m.name}: keywords={string.Join(" ", m.shaderKeywords)}");
+                    for (int i = 0; i < sh.GetPropertyCount(); i++)
+                    {
+                        string n = sh.GetPropertyName(i), ln = n.ToLower();
+                        if (!(ln.Contains("half") || ln.Contains("dot") || ln.Contains("comic") || ln.Contains("screen") || ln.Contains("pattern") || ln.Contains("shade") || ln.Contains("tone"))) continue;
+                        var t = sh.GetPropertyType(i);
+                        object v = t == UnityEngine.Rendering.ShaderPropertyType.Texture ? (object)(m.GetTexture(n) ? m.GetTexture(n).name : "-")
+                            : t == UnityEngine.Rendering.ShaderPropertyType.Color ? m.GetColor(n) : t == UnityEngine.Rendering.ShaderPropertyType.Vector ? m.GetVector(n) : (object)m.GetFloat(n);
+                        sb.Append($" {n}={v}");
+                    }
+                    sb.AppendLine();
+                }
+            }
+            File.WriteAllText(Path.Combine(Dir, "shaders.txt"), sb.ToString());
+        }
 
         static void RaceDump()
         {
