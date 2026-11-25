@@ -33,6 +33,7 @@ namespace RaceBoot
         public static float VolMaster = 1f, VolMusic = 1f, VolEngine = 1f, VolFx = 1f;
         public static string Soundtrack = GameAudio.Original;
         public static float FfbStrength = 0.7f, FfbCentering = 0.6f, FfbEffects = 0.6f;
+        public static int DriftStyle = 0;      // 0 = Origine, 1 = Ridge Racer, 2 = OutRun 2, 3 = Daytona 2 / Scud Race
         public static HashSet<string> HudHidden = new HashSet<string> { "Minimap" };
         public static bool HudShown(string key) => !HudHidden.Contains(key);
         public static void SetHudShown(string key, bool v) { if (v) HudHidden.Remove(key); else HudHidden.Add(key); }
@@ -109,6 +110,7 @@ namespace RaceBoot
                     case "WheelStartButton": Wheel.StartButton = n; break;
                     case "WheelSteerHalf": if (fl > 0.01f) Wheel.SteerHalf = fl; break;
                     case "MameOutputs": MameOutputs = b; break;
+                    case "DriftStyle": DriftStyle = Mathf.Clamp(n, 0, 3); break;
                     case "HudHidden": HudHidden = new HashSet<string>(v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim())); break;
                 }
             }
@@ -137,6 +139,7 @@ namespace RaceBoot
                     "WheelBrakeAxis=" + Wheel.BrakeAxis, "WheelBrakeRest=" + F(Wheel.BrakeRest), "WheelBrakeFull=" + F(Wheel.BrakeFull),
                     "WheelPedalDeadZone=" + F(Wheel.PedalDeadZone), "WheelViewButton=" + Wheel.ViewButton, "WheelMenuButton=" + Wheel.MenuButton,
                     "WheelStartButton=" + Wheel.StartButton, "WheelSteerHalf=" + F(Wheel.SteerHalf), "MameOutputs=" + (MameOutputs ? 1 : 0),
+                    "DriftStyle=" + DriftStyle,
                 });
             }
             catch (Exception e) { Debug.LogWarning("[RaceBoot] settings save failed: " + e.Message); }
@@ -289,9 +292,11 @@ namespace RaceBoot
             Arcade.Install();
             GameAudio.Install();
             MameOutputs.Install();
+            Ranking.Install();
             CameraViews.Install();
             Hud.Install();
             Replay.Install();
+            Drift.Install();
         }
 
         void OnApplicationQuit() => Ffb.Shutdown(L.T("arrêté"));
@@ -499,7 +504,7 @@ namespace RaceBoot
             GUILayout.Label("9OsGP — OPTIONS", title);
             GUILayout.Space(10 * s);
             GUILayout.BeginHorizontal();
-            string[] tabs = { L.T("Affichage"), L.T("Graphismes"), L.T("Caméra"), L.T("HUD"), L.T("Audio"), L.T("Contrôles") };
+            string[] tabs = { L.T("Affichage"), L.T("Graphismes"), L.T("Caméra"), L.T("HUD"), L.T("Audio"), L.T("Gameplay"), L.T("Contrôles") };
             for (int i = 0; i < tabs.Length; i++)
                 if (GUILayout.Button(tabs[i], i == tab ? toggleOn : toggleOff, GUILayout.Height(44 * s))) tab = i;
             GUILayout.EndHorizontal();
@@ -511,6 +516,7 @@ namespace RaceBoot
             else if (tab == 2) DrawCamera(s);
             else if (tab == 3) DrawHud(s);
             else if (tab == 4) DrawAudio(s);
+            else if (tab == 5) DrawGameplay(s);
             else controls.Draw(s, header!, label!, small!, button!, toggleOn!);
             GUILayout.EndScrollView();
 
@@ -700,6 +706,26 @@ namespace RaceBoot
             GUILayout.Space(10 * s);
             GUILayout.Label(L.T("Les changements sont appliqués immédiatement et enregistrés à la fermeture du menu."), small);
             ApplyGraphics();
+        }
+
+        static readonly string[] DriftDescriptions =
+        {
+            "Dérapage d'origine du jeu : frein maintenu + braquage à fond au-dessus de 150 km/h.",
+            "En virage, lâchez l'accélérateur et réappuyez aussitôt (ou un coup de frein) : glisse très stable qui garde la vitesse. Le volant règle la trajectoire ; lâcher les gaz ou redresser fait raccrocher.",
+            "Même entrée qu'à Ridge Racer. Grande glisse très tolérante qui tient tant que le volant est braqué, même sans gaz ; un contre-braquage franc la bascule de l'autre côté pour enchaîner les S.",
+            "Coup de frein en braquant : l'arrière décroche vraiment et continue de tourner sous les gaz. Contre-braquez pour tenir l'angle, sinon c'est le tête-à-queue ; lâcher les gaz fait raccrocher. La glisse coûte de la vitesse.",
+        };
+
+        void DrawGameplay(float s)
+        {
+            GUILayout.Label(L.T("Style de dérapage"), header);
+            GUILayout.BeginHorizontal();
+            for (int i = 0; i < Drift.StyleNames.Length; i++)
+                if (GUILayout.Button(L.T(Drift.StyleNames[i]), Settings.DriftStyle == i ? toggleOn : toggleOff, GUILayout.Height(44 * s)))
+                    Settings.DriftStyle = i;
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10 * s);
+            GUILayout.Label(L.T(DriftDescriptions[Mathf.Clamp(Settings.DriftStyle, 0, DriftDescriptions.Length - 1)]), small);
         }
     }
 }

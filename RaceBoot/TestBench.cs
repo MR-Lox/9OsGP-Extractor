@@ -38,6 +38,10 @@ namespace RaceBoot
             if (pauseFsm) pauseFsm!.enabled = false;
             if (mode == "f9") { yield return F9Test(); Application.Quit(); yield break; }
             if (mode == "shaders") { ShaderDump(); Application.Quit(); yield break; }
+            if (mode == "finish") { yield return FinishTest(); Application.Quit(); yield break; }
+            if (mode == "ranking") { yield return RankingTest(); Application.Quit(); yield break; }
+            if (mode == "drift") { yield return DriftTest(); Application.Quit(); yield break; }
+            if (mode == "cardump") { yield return CarDump(); Application.Quit(); yield break; }
             if (mode == "volume") { yield return VolumeTest(); Application.Quit(); yield break; }
             if (mode == "quit") { yield return QuitTest(); Application.Quit(); yield break; }
             if (mode == "audio") { yield return AudioTest(); Application.Quit(); yield break; }
@@ -393,6 +397,160 @@ namespace RaceBoot
         }
 
         // A pooled sound started while the effects are at 30 %: its volume must be scaled in that very frame.
+        // Physics of the player's car and the race manager variables, during a race.
+        // Scripted driving with a drift style (second line of testbench.txt): telemetry of the slide.
+        // A race ended by the game itself: laps counter pushed past the last lap after 20 s of racing.
+        IEnumerator FinishTest()
+        {
+            bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            yield return new WaitForSecondsRealtime(25f);
+            var globals = Type.GetType("HutongGames.PlayMaker.FsmVariables, PlayMaker")?.GetProperty("GlobalVariables", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
+            var lap = globals?.GetType().GetMethod("GetFsmInt", new[] { typeof(string) })?.Invoke(globals, new object[] { "AB_lap_count" });
+            lap?.GetType().GetProperty("Value")?.SetValue(lap, 7);
+            var dir = Path.Combine(Dir, "uitest");
+            Directory.CreateDirectory(dir);
+            for (int i = 0; i < 6; i++)
+            {
+                yield return new WaitForSecondsRealtime(2f);
+                var rm = Showcase.Fsm("GameManager", "race manager");
+                var fsm = rm?.GetType().GetProperty("Fsm")?.GetValue(rm);
+                Debug.Log($"[RaceBoot] testbench: finish +{2 * (i + 1)}s state={fsm?.GetType().GetProperty("ActiveStateName")?.GetValue(fsm)} ranking={Ranking.PhaseName}");
+                ScreenCapture.CaptureScreenshot(Path.Combine(dir, $"finish{i}.png"));
+            }
+            Ranking.TestType("ZZZ");
+            Ranking.TestDone();
+            for (int i = 0; i < 6; i++)
+            {
+                yield return new WaitForSecondsRealtime(2f);
+                var rm = Showcase.Fsm("GameManager", "race manager");
+                var fsm = rm?.GetType().GetProperty("Fsm")?.GetValue(rm);
+                Debug.Log($"[RaceBoot] testbench: after name +{2 * (i + 1)}s state={fsm?.GetType().GetProperty("ActiveStateName")?.GetValue(fsm)} ranking={Ranking.PhaseName} replay={Replay.Playing}");
+            }
+            Settings.IntroEnabled = intro;
+        }
+
+        IEnumerator RankingTest()
+        {
+            var dir = Path.Combine(Dir, "uitest");
+            Directory.CreateDirectory(dir);
+            Ranking.TestRace(214.37f, 32.91f);
+            yield return new WaitForSecondsRealtime(1f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(dir, "rank_entry1.png"));
+            yield return new WaitForSecondsRealtime(0.3f);
+            Ranking.TestType("AC");
+            yield return new WaitForSecondsRealtime(0.5f);
+            ScreenCapture.CaptureScreenshot(Path.Combine(dir, "rank_entry2.png"));
+            yield return new WaitForSecondsRealtime(0.3f);
+            Ranking.TestType("ACE");
+            Ranking.TestDone();
+            yield return new WaitForSecondsRealtime(1f);
+            Debug.Log("[RaceBoot] testbench: ranking phase " + Ranking.PhaseName + ", first " + Ranking.Entries[0].Name + " " + Ranking.FormatTime(Ranking.Entries[0].Time));
+            ScreenCapture.CaptureScreenshot(Path.Combine(dir, "rank_board.png"));
+            float until = Time.realtimeSinceStartup + 25f;
+            while (Ranking.PhaseName != "Attract" && Time.realtimeSinceStartup < until) yield return null;
+            yield return new WaitForSecondsRealtime(1f);
+            Debug.Log("[RaceBoot] testbench: attract phase " + Ranking.PhaseName);
+            ScreenCapture.CaptureScreenshot(Path.Combine(dir, "rank_attract.png"));
+            yield return new WaitForSecondsRealtime(0.5f);
+        }
+
+        IEnumerator DriftTest()
+        {
+            int saved = Settings.DriftStyle;
+            if (int.TryParse(arg, out int st)) Settings.DriftStyle = st;
+            bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            var input = Showcase.Fsm("race_car_01", "INPUT");
+            yield return new WaitForSecondsRealtime(4.6f);
+            if (input) input!.enabled = false;
+            void Set(float a, float b, float s) { Showcase.SetFloat(input!, "accelerate", a); Showcase.SetFloat(input!, "brake", b); Showcase.SetFloat(input!, "steer raw", s); }
+            // phases: (duration, accel, brake, steer, label)
+            var phases = new (float d, float a, float b, float s, string l)[]
+            {
+                (2.0f, 1f, 0f, 0f, "straight"),
+                (0.18f, 0f, 0f, 0.8f, "lift+steer"),
+                (0.6f, 1f, 0f, 0.8f, "hold"),
+                (0.5f, 1f, 0f, -0.8f, "counter"),
+                (0.6f, 1f, 0f, 0.0f, "neutral"),
+                (0.6f, 1f, 0f, 0f, "release"),
+            };
+            float next = 0f;
+            foreach (var ph in phases)
+            {
+                float end = Time.time + ph.d;
+                while (Time.time < end)
+                {
+                    Set(ph.a, ph.b, ph.s);
+                    if (Time.time >= next)
+                    {
+                        next = Time.time + 0.05f;
+                        Debug.Log($"[RaceBoot] drift style={Settings.DriftStyle} {ph.l,-10} kmh={Drift.Kmh,5:F0} drifting={(Drift.Drifting ? 1 : 0)} spin={(Drift.Spinning ? 1 : 0)} dir={Drift.Direction,2} slip={Drift.SlipAngle,6:F1} yaw={Drift.YawRate,5:F2}");
+                    }
+                    yield return new WaitForFixedUpdate();
+                }
+            }
+            Settings.DriftStyle = saved; Settings.IntroEnabled = intro;
+            Settings.Save();
+        }
+
+        IEnumerator CarDump()
+        {
+            const BindingFlags A = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            yield return new WaitForSecondsRealtime(14f);
+            var sb = new StringBuilder();
+            var car = GameObject.Find("race_car_01");
+            foreach (var rb in car!.GetComponentsInChildren<Rigidbody>(true))
+                sb.AppendLine($"RB {PathOf(rb.transform)} mass={rb.mass} drag={rb.linearDamping} adrag={rb.angularDamping} kin={rb.isKinematic} cons={rb.constraints} com={rb.centerOfMass} inertia={rb.inertiaTensor} interp={rb.interpolation}");
+            foreach (var j in car.GetComponentsInChildren<Joint>(true)) sb.AppendLine($"JOINT {PathOf(j.transform)} {j.GetType().Name} -> {(j.connectedBody ? j.connectedBody!.name : "-")}");
+            foreach (var c in car.GetComponentsInChildren<Collider>(true)) sb.AppendLine($"COL {PathOf(c.transform)} {c.GetType().Name} mat={(c.sharedMaterial ? c.sharedMaterial!.name + " df=" + c.sharedMaterial.dynamicFriction + " sf=" + c.sharedMaterial.staticFriction : "-")}");
+            var gm = GameObject.Find("GameManager");
+            var all = new List<MonoBehaviour>(car.GetComponentsInChildren<MonoBehaviour>(true));
+            if (gm) all.AddRange(gm!.GetComponents<MonoBehaviour>());
+            foreach (var mb in all)
+            {
+                if (mb.GetType().Name != "PlayMakerFSM") { sb.AppendLine("MB " + PathOf(mb.transform) + " " + mb.GetType().FullName); continue; }
+                string fname = mb.GetType().GetProperty("FsmName")?.GetValue(mb) as string ?? "";
+                if (!(fname == "race manager" || fname == "timer countdown" || fname == "steer" || fname == "downforce" || fname == "drift" || fname == "drift enter exit" || fname == "accelerate brake" || fname == "INPUT" || fname == "car body drift angle" || fname == "orient to track, speed kph" || fname == "crash")) continue;
+                var fsm = mb.GetType().GetProperty("Fsm")?.GetValue(mb);
+                sb.AppendLine($"FSM {PathOf(mb.transform)} : {fname} active={fsm?.GetType().GetProperty("ActiveStateName")?.GetValue(fsm)}");
+                var vars = mb.GetType().GetProperty("FsmVariables")?.GetValue(mb);
+                foreach (var listName in new[] { "FloatVariables", "BoolVariables", "IntVariables", "Vector3Variables" })
+                    if (vars?.GetType().GetProperty(listName)?.GetValue(vars) is Array arr)
+                        foreach (var v in arr) sb.AppendLine($"   var {v.GetType().GetProperty("Name")?.GetValue(v)} = {v.GetType().GetProperty("Value")?.GetValue(v)}");
+                foreach (var st in (Array)fsm!.GetType().GetProperty("States", A)!.GetValue(fsm))
+                {
+                    sb.Append("   state " + st.GetType().GetProperty("Name")?.GetValue(st) + ":");
+                    foreach (var tr in (Array)st.GetType().GetProperty("Transitions", A)!.GetValue(st))
+                        sb.Append(" [" + tr.GetType().GetProperty("EventName", A)?.GetValue(tr) + "->" + tr.GetType().GetProperty("ToState", A)?.GetValue(tr) + "]");
+                    sb.AppendLine();
+                    foreach (var ac in (Array)st.GetType().GetProperty("Actions", A)!.GetValue(st))
+                    {
+                        sb.Append("      " + ac.GetType().Name + ":");
+                        foreach (var f in ac.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public))
+                        {
+                            object? val = null; try { val = f.GetValue(ac); } catch { }
+                            string desc = val == null ? "null" : val.GetType().GetProperty("Name")?.GetValue(val) is string nm && nm != "" && !(val is UnityEngine.Object) ? nm + "(" + val.GetType().GetProperty("Value")?.GetValue(val) + ")" : (val.GetType().GetProperty("Value")?.GetValue(val) ?? val).ToString();
+                            if (desc.Length > 70) desc = desc.Substring(0, 70);
+                            sb.Append(" " + f.Name + "=" + desc);
+                        }
+                        sb.AppendLine();
+                    }
+                }
+            }
+            var rm = Showcase.Fsm("GameManager", "race manager");
+            var rv = rm!.GetType().GetProperty("FsmVariables")?.GetValue(rm);
+            foreach (var listName in new[] { "FloatVariables", "BoolVariables", "IntVariables", "StringVariables" })
+                if (rv?.GetType().GetProperty(listName)?.GetValue(rv) is Array arr)
+                    foreach (var v in arr) sb.AppendLine($"RM var {v.GetType().GetProperty("Name")?.GetValue(v)} = {v.GetType().GetProperty("Value")?.GetValue(v)}");
+            var gl = Type.GetType("HutongGames.PlayMaker.FsmVariables, PlayMaker")?.GetProperty("GlobalVariables", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
+            foreach (var listName in new[] { "IntVariables", "FloatVariables", "BoolVariables" })
+                if (gl?.GetType().GetProperty(listName)?.GetValue(gl) is Array arr)
+                    foreach (var v in arr) sb.AppendLine($"GLOBAL {listName} {v.GetType().GetProperty("Name")?.GetValue(v)} = {v.GetType().GetProperty("Value")?.GetValue(v)}");
+            File.WriteAllText(Path.Combine(Dir, "cardump.txt"), sb.ToString());
+        }
+
         IEnumerator VolumeTest()
         {
             float fx = Settings.VolFx, eng = Settings.VolEngine;

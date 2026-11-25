@@ -25,6 +25,8 @@ et en fait un jeu autonome qui démarre directement sur la course, avec un vrai 
 | 🎨 **Graphismes** | Activez ou coupez le bezel de borne d'arcade, l'effet CRT, les contours noirs (cel shading), le post-traitement BD et la trame halftone sur les éclairages. |
 | 🕹️ **Ambiance borne d'arcade** | Présentation de la voiture avant le départ (trois plans qui se rapprochent, puis votre vue de course pour le compte à rebours), voiture immobilisée pendant le décompte, et après la course : replay, GAME OVER, transition à points noirs, puis « PRESS START ». |
 | 🎬 **Replay** | Après la course, la course est rejouée avec ses effets (fumée, terre, étincelles, flammes, feux de freins) et un réalisateur automatique : caméras TV au bord de la piste, poursuite, hélico, capot… Le dernier replay se revoit à tout moment avec **F9**. |
+| 🏁 **Styles de dérapage** | Origine, **Ridge Racer**, **OutRun 2** ou **Daytona / Scud Race** : entrée, tenue et sortie de glisse comme dans ces jeux. |
+| 🏆 **Classement** | Les 10 meilleurs temps, sauvegardés, affichés en fin de course et dans l'attract ; un nouveau record se signe en 3 lettres sur une roue de lettres. |
 | 🔊 **Audio** | Volumes général, musique, moteurs et effets, de 0 à 200 %. Bande-son au choix : la musique d'origine ou vos propres fichiers mp3 / ogg / wav (un morceau ou tous au hasard). |
 | 🌍 **5 langues** | Menu d'options en English, Español, Français, Deutsch et Português BR (les langues de Takeover 2). |
 | ⏸️ **Menu Pause épuré** | Fond transparent pour garder la course visible, entrée OPTIONS retirée (le menu F1 la remplace). |
@@ -96,6 +98,7 @@ Relancer l'extracteur met à jour une extraction existante : seuls les fichiers 
   - **Autres informations** (temps, tour, position, temps au tour) : taille, hauteur, écartement horizontal et vertical (à 1, les blocs sont plaqués contre les bords en 16:9 / 21:9), marge aux bords.
   - Affichage ou masquage de chaque bloc, messages compris (départ, checkpoint, contresens).
 - **Audio** : volumes de 0 à 200 % (général, musique, moteurs, effets sonores ; 100 % = volume d'origine, au-delà le son est amplifié, pratique pour le moteur, discret dans le jeu d'origine) et bande-son. Pour utiliser vos propres musiques, placez des fichiers mp3, ogg ou wav dans un dossier `Music` à côté de `9OsGP.exe` : ils apparaissent dans la liste, avec un mode aléatoire dès qu'il y en a plusieurs.
+- **Gameplay** : style de dérapage (voir ci-dessous).
 - **Contrôles** : réassignation clavier et manette, et retour aux valeurs par défaut. L'onglet **Volant / pédalier** est détaillé ci-dessous.
 
 Les réglages sont enregistrés dans `9OsGP_settings.ini`, à côté de `9OsGP.exe`. Ils sont réappliqués au lancement, même si le jeu d'origine tente de remettre son propre mode d'affichage.
@@ -114,6 +117,23 @@ Pendant la course, la position de toutes les voitures (carrosserie, roues) est e
 ### 🚦 Départ
 
 Après START, trois plans se rapprochent de la voiture, puis la caméra rejoint votre vue de course (poursuite, capot ou intérieure), sur laquelle se joue le compte à rebours (désactivable dans **F1 › Caméra**). Le jeu continue de tourner pendant ces plans (confettis, public). Pendant le décompte, la voiture reste sur la grille : on peut faire monter le moteur dans les tours, mais pas partir avant le GO.
+
+### 🏁 Styles de dérapage
+
+Dans **F1 › Gameplay** :
+
+| Style | Entrée en glisse | Pendant la glisse | Sortie |
+|---|---|---|---|
+| **Origine** | Frein maintenu + braquage à fond au-dessus de 150 km/h | Glisse d'origine du jeu | Relâcher le frein |
+| **Ridge Racer** | En virage, lâcher l'accélérateur et réappuyer aussitôt (ou un coup de frein) | Très stable, garde la vitesse ; braquer resserre et augmente l'angle, contre-braquer élargit | Lâcher les gaz ou redresser le volant |
+| **OutRun 2** | Même entrée | Grande glisse tolérante, tient même sans gaz ; un contre-braquage franc la bascule de l'autre côté (enchaînement des S) | Volant au centre |
+| **Daytona / Scud Race** | Coup de frein en braquant | Vraie glisse : l'arrière continue de tourner sous les gaz, il faut contre-braquer pour tenir l'angle, sinon tête-à-queue ; la glisse coûte de la vitesse | Lâcher les gaz fait raccrocher |
+
+### 🏆 Classement
+
+Les 10 meilleurs temps de course (du GO à l'arrivée, avec le meilleur tour) sont enregistrés dans `9OsGP_ranking.txt`, à côté de `9OsGP.exe`. Le tableau s'affiche à la fin de chaque course terminée et dans l'attract (pendant le replay et sur l'écran « PRESS START »).
+
+Un nouveau record ouvre la saisie du nom, comme sur une borne : une roue de lettres que l'on fait tourner au volant, au stick ou aux flèches, en validant chaque lettre avec l'accélérateur, START ou Entrée. Le frein efface, `END` termine, et le clavier permet aussi de taper directement. Au bout de 30 secondes, le nom est validé tel quel.
 
 ### 🏎️ Volant, pédalier et retour de force
 
