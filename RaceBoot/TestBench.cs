@@ -38,6 +38,8 @@ namespace RaceBoot
             if (pauseFsm) pauseFsm!.enabled = false;
             if (mode == "f9") { yield return F9Test(); Application.Quit(); yield break; }
             if (mode == "shaders") { ShaderDump(); Application.Quit(); yield break; }
+            if (mode == "driftwall") { yield return DriftWall(); Application.Quit(); yield break; }
+            if (mode == "driftlap") { yield return DriftLap(); Application.Quit(); yield break; }
             if (mode == "finish") { yield return FinishTest(); Application.Quit(); yield break; }
             if (mode == "ranking") { yield return RankingTest(); Application.Quit(); yield break; }
             if (mode == "drift") { yield return DriftTest(); Application.Quit(); yield break; }
@@ -398,7 +400,151 @@ namespace RaceBoot
 
         // A pooled sound started while the effects are at 30 %: its volume must be scaled in that very frame.
         // Physics of the player's car and the race manager variables, during a race.
-        // Scripted driving with a drift style (second line of testbench.txt): telemetry of the slide.
+        // Scripted driving with a drift style (second line of testbench.txt): each game's entry gesture, then
+        // straightening the car (grip must come back), then a second slide swung through to the other side.
+        IEnumerator DriftTest()
+        {
+            int saved = Settings.DriftStyle;
+            if (int.TryParse(arg, out int st)) Settings.DriftStyle = st;
+            bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            var input = Showcase.Fsm("race_car_01", "INPUT");
+            yield return new WaitForSecondsRealtime(4.6f);
+            if (input) input!.enabled = false;
+            float a = 1f, b = 0f, s = 0f; string label = "";
+            float next = 0f;
+            IEnumerator Run(float d)
+            {
+                float end = Time.time + d;
+                while (Time.time < end)
+                {
+                    Showcase.SetFloat(input!, "accelerate", a); Showcase.SetFloat(input!, "brake", b); Showcase.SetFloat(input!, "steer raw", s);
+                    if (Time.time >= next)
+                    {
+                        next = Time.time + 0.05f;
+                        Debug.Log($"[RaceBoot] drift style={Settings.DriftStyle} {label,-12} a={a:F1} b={b:F1} s={s,5:F2} kmh={Drift.Kmh,4:F0} drifting={(Drift.Drifting ? 1 : 0)} dir={Drift.Direction,2} angle={Drift.SlipAngle,6:F1} yaw={Drift.YawRate,5:F2}");
+                    }
+                    yield return new WaitForFixedUpdate();
+                }
+            }
+            IEnumerator Gesture()
+            {
+                switch (Settings.DriftStyle)
+                {
+                    case 1: label = "lift"; a = 0f; s = 0f; yield return Run(0.45f); label = "flick"; s = 0.9f; yield return Run(0.1f); a = 1f; break;
+                    case 2: label = "brake"; a = 1f; b = 1f; s = 0f; yield return Run(0.1f); b = 0f; label = "flick"; s = 0.9f; yield return Run(0.05f); break;
+                    default: label = "feint"; a = 0f; b = 1f; s = -0.6f; yield return Run(0.25f); b = 0f; label = "flick"; s = 0.9f; yield return Run(0.05f); a = 1f; break;
+                }
+            }
+            label = "straight"; a = 1f; s = 0f; yield return Run(2.6f);
+            yield return Gesture();
+            label = "hold"; a = 1f; s = 0.8f; yield return Run(0.15f);
+            label = "neutral"; s = 0f; yield return Run(0.25f);
+            // Straighten: counter-steer until the car is straight, then wheel centred.
+            label = "straighten";
+            float until = Time.time + 2f;
+            while (Time.time < until && Drift.Drifting && Mathf.Abs(Drift.SlipAngle) > 3f) { s = -Mathf.Sign(Drift.SlipAngle) * 0.6f; yield return Run(Time.fixedDeltaTime); }
+            label = "centred"; s = 0f; yield return Run(0.5f);
+            Debug.Log($"[RaceBoot] drift CHECK straighten -> drifting={Drift.Drifting} kmh={Drift.Kmh:F0}");
+            label = "straight2"; s = 0f; yield return Run(2.2f);
+            yield return Gesture();
+            label = "hold2"; a = 1f; s = 0.8f; yield return Run(0.3f);
+            label = "swing"; s = -0.9f; yield return Run(1.0f);
+            Debug.Log($"[RaceBoot] drift CHECK swing -> drifting={Drift.Drifting} dir={Drift.Direction}");
+            label = "end"; s = 0f; yield return Run(0.3f);
+            Settings.DriftStyle = saved; Settings.IntroEnabled = intro;
+            Settings.Save();
+        }
+
+        // A slide straight into the wall of the start straight, then the style switched to the original.
+        IEnumerator DriftWall()
+        {
+            int saved = Settings.DriftStyle;
+            Settings.DriftStyle = 1;
+            bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            var input = Showcase.Fsm("race_car_01", "INPUT");
+            yield return new WaitForSecondsRealtime(4.6f);
+            if (input) input!.enabled = false;
+            float a = 1f, s = 0f; string label = ""; float next = 0f;
+            IEnumerator Run(float d)
+            {
+                float end = Time.time + d;
+                while (Time.time < end)
+                {
+                    Showcase.SetFloat(input!, "accelerate", a); Showcase.SetFloat(input!, "brake", 0f); Showcase.SetFloat(input!, "steer raw", s);
+                    if (Time.time >= next) { next = Time.time + 0.1f; Debug.Log($"[RaceBoot] wall {label,-10} style={Settings.DriftStyle} s={s,5:F2} kmh={Drift.Kmh,4:F0} drifting={(Drift.Drifting ? 1 : 0)} angle={Drift.SlipAngle,6:F1} yaw={Drift.YawRate,5:F2} {Drift.Debug}"); }
+                    yield return new WaitForFixedUpdate();
+                }
+            }
+            label = "straight"; yield return Run(2.4f);
+            label = "lift"; a = 0f; yield return Run(0.45f);
+            label = "flick"; s = 0.9f; yield return Run(0.1f); a = 1f;
+            label = "into wall"; s = 0.9f; yield return Run(2.0f);
+            label = "centred"; s = 0f; yield return Run(1.0f);
+            Settings.DriftStyle = 2;
+            label = "outrun"; yield return Run(0.6f);
+            Settings.DriftStyle = 0;
+            label = "origine"; yield return Run(2.0f);
+            label = "steer"; s = -0.8f; yield return Run(1.0f);
+            Settings.DriftStyle = saved; Settings.IntroEnabled = intro;
+            Settings.Save();
+        }
+
+        // A lap of the real track with a drift style (arg): an autopilot follows the AI cars and starts a slide
+        // in every bend the way a player would (lift-off flick, or brake tap for Daytona), steering as usual.
+        IEnumerator DriftLap()
+        {
+            int saved = Settings.DriftStyle;
+            if (int.TryParse(arg, out int style)) Settings.DriftStyle = style;
+            bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            var input = Showcase.Fsm("race_car_01", "INPUT");
+            yield return new WaitForSecondsRealtime(4.6f);
+            if (input) input!.enabled = false;
+            var car = GameObject.Find("race_car_01")!.transform;
+            float end = Time.time + 60f, lastDrift = -10f, flickUntil = -1f, next = 0f, driftStart = 0f, maxDrift = 0f;
+            int entries = 0, slow = 0, spins = 0; bool wasDrift = false, wasSlow = false, wasSpin = false;
+            Vector3 lastPos = car.position; float dist = 0f;
+            float stuckSince = -1f, reverseUntil = -1f;
+            while (Time.time < end)
+            {
+                float steer = 0f, throttle = 1f;
+                try { Autopilot(car, out steer, out throttle); } catch { ai = null; }
+                float accel = 1f, brake = 0f;
+                // Stuck against something: back off like a player would.
+                if (Drift.Kmh < 10f) { if (stuckSince < 0f) stuckSince = Time.time; } else stuckSince = -1f;
+                if (stuckSince > 0f && Time.time - stuckSince > 1.5f) { reverseUntil = Time.time + 1.5f; stuckSince = -1f; }
+                if (reverseUntil > Time.time) { accel = 0f; brake = 1f; steer = -steer; }
+                // Bend ahead: start a slide like a player would.
+                if (!Drift.Drifting && Time.time - lastDrift > 2f && Mathf.Abs(steer) > 0.5f && Drift.Kmh > 160f && flickUntil < 0f) flickUntil = Time.time + 0.15f;
+                if (flickUntil > 0f)
+                {
+                    if (Settings.DriftStyle == 3 || Settings.DriftStyle == 0) brake = 1f; else accel = 0f;
+                    if (Time.time > flickUntil) { flickUntil = -1f; lastDrift = Time.time; }
+                }
+                Showcase.SetFloat(input!, "accelerate", accel * Mathf.Max(throttle, 0.4f));
+                Showcase.SetFloat(input!, "brake", brake);
+                Showcase.SetFloat(input!, "steer raw", steer);
+                var b = Showcase.Fsm("race_car_01", "INPUT");
+                if (Drift.Drifting && !wasDrift) { entries++; driftStart = Time.time; }
+                if (Drift.Drifting) maxDrift = Mathf.Max(maxDrift, Time.time - driftStart);
+                if (Drift.Spinning && !wasSpin) spins++;
+                bool isSlow = Drift.Kmh < 70f; if (isSlow && !wasSlow) slow++;
+                wasDrift = Drift.Drifting; wasSpin = Drift.Spinning; wasSlow = isSlow;
+                dist += Vector3.Distance(lastPos, car.position); lastPos = car.position;
+                if (Time.time >= next)
+                {
+                    next = Time.time + 1f;
+                    Debug.Log($"[RaceBoot] driftlap style={Settings.DriftStyle} kmh={Drift.Kmh,4:F0} drift={(Drift.Drifting ? 1 : 0)} slip={Drift.SlipAngle,6:F1} yaw={Drift.YawRate,5:F2} steer={steer,5:F2} dist={dist,5:F0}");
+                }
+                yield return new WaitForFixedUpdate();
+            }
+            Debug.Log($"[RaceBoot] driftlap RESULT style={Settings.DriftStyle} distance={dist:F0} m entries={entries} longest={maxDrift:F1}s spins={spins} under70={slow}");
+            Settings.DriftStyle = saved; Settings.IntroEnabled = intro;
+            Settings.Save();
+        }
+
         // A race ended by the game itself: laps counter pushed past the last lap after 20 s of racing.
         IEnumerator FinishTest()
         {
@@ -453,45 +599,6 @@ namespace RaceBoot
             Debug.Log("[RaceBoot] testbench: attract phase " + Ranking.PhaseName);
             ScreenCapture.CaptureScreenshot(Path.Combine(dir, "rank_attract.png"));
             yield return new WaitForSecondsRealtime(0.5f);
-        }
-
-        IEnumerator DriftTest()
-        {
-            int saved = Settings.DriftStyle;
-            if (int.TryParse(arg, out int st)) Settings.DriftStyle = st;
-            bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
-            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
-            var input = Showcase.Fsm("race_car_01", "INPUT");
-            yield return new WaitForSecondsRealtime(4.6f);
-            if (input) input!.enabled = false;
-            void Set(float a, float b, float s) { Showcase.SetFloat(input!, "accelerate", a); Showcase.SetFloat(input!, "brake", b); Showcase.SetFloat(input!, "steer raw", s); }
-            // phases: (duration, accel, brake, steer, label)
-            var phases = new (float d, float a, float b, float s, string l)[]
-            {
-                (2.0f, 1f, 0f, 0f, "straight"),
-                (0.18f, 0f, 0f, 0.8f, "lift+steer"),
-                (0.6f, 1f, 0f, 0.8f, "hold"),
-                (0.5f, 1f, 0f, -0.8f, "counter"),
-                (0.6f, 1f, 0f, 0.0f, "neutral"),
-                (0.6f, 1f, 0f, 0f, "release"),
-            };
-            float next = 0f;
-            foreach (var ph in phases)
-            {
-                float end = Time.time + ph.d;
-                while (Time.time < end)
-                {
-                    Set(ph.a, ph.b, ph.s);
-                    if (Time.time >= next)
-                    {
-                        next = Time.time + 0.05f;
-                        Debug.Log($"[RaceBoot] drift style={Settings.DriftStyle} {ph.l,-10} kmh={Drift.Kmh,5:F0} drifting={(Drift.Drifting ? 1 : 0)} spin={(Drift.Spinning ? 1 : 0)} dir={Drift.Direction,2} slip={Drift.SlipAngle,6:F1} yaw={Drift.YawRate,5:F2}");
-                    }
-                    yield return new WaitForFixedUpdate();
-                }
-            }
-            Settings.DriftStyle = saved; Settings.IntroEnabled = intro;
-            Settings.Save();
         }
 
         IEnumerator CarDump()

@@ -125,9 +125,11 @@ Dans **F1 › Gameplay** :
 | Style | Entrée en glisse | Pendant la glisse | Sortie |
 |---|---|---|---|
 | **Origine** | Frein maintenu + braquage à fond au-dessus de 150 km/h | Glisse d'origine du jeu | Relâcher le frein |
-| **Ridge Racer** | En virage, lâcher l'accélérateur et réappuyer aussitôt (ou un coup de frein) | Très stable, garde la vitesse ; braquer resserre et augmente l'angle, contre-braquer élargit | Lâcher les gaz ou redresser le volant |
-| **OutRun 2** | Même entrée | Grande glisse tolérante, tient même sans gaz ; un contre-braquage franc la bascule de l'autre côté (enchaînement des S) | Volant au centre |
-| **Daytona / Scud Race** | Coup de frein en braquant | Vraie glisse : l'arrière continue de tourner sous les gaz, il faut contre-braquer pour tenir l'angle, sinon tête-à-queue ; la glisse coûte de la vitesse | Lâcher les gaz fait raccrocher |
+| **Ridge Racer** | Lâcher l'accélérateur un moment puis un coup de volant (ou : lâcher, coup de frein, réaccélérer à fond en braquant) | La voiture glisse en biais ; le volant ouvre ou referme l'angle, la trajectoire suit l'angle | Remettre la voiture droite : elle reprend son grip. La faire passer de l'autre côté enchaîne une nouvelle glisse |
+| **OutRun 2** | Plus facile : un coup de volant avec un coup de frein ou un bref lâcher, l'accélérateur peut rester enfoncé | Comme Ridge Racer | Comme Ridge Racer |
+| **Daytona / Scud Race** | Appel puis contre-appel du volant (d'un côté puis vivement de l'autre), avec un coup de frein ou un lâcher | L'angle se referme de lui-même dès qu'on ne braque plus dans le virage | La voiture retrouve son grip plus facilement |
+
+Dans tous les styles, un choc (mur, voiture) met fin à la glisse.
 
 ### 🏆 Classement
 

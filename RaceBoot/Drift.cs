@@ -12,14 +12,13 @@ namespace RaceBoot
     // visually ("car body drift angle") while the car turns harder.
     //
     //  0 = Origine: the game's drift, untouched (brake held + full steering lock above 150 km/h).
-    //  1 = Ridge Racer: enter by lifting off and back on the throttle while turning (or a brake tap). Very
-    //      stable "rail" slide that keeps its speed; the wheel sets the line (into the turn = tighter and a
-    //      bigger angle, counter-steer = wider and smaller). Lift off or straighten the wheel: grip again.
-    //  2 = OutRun 2: same entry. Huge, very forgiving slide that holds as long as the wheel is turned, even off
-    //      the throttle; a firm counter-steer flips it into the other direction (S-bends in one slide).
-    //  3 = Daytona USA / Scud Race: brake tap (or lift-off) while turning. A real slide: the tail steps out
-    //      and keeps rotating under power, so you hold the angle with counter-steer, or spin. Speed is
-    //      scrubbed while sideways; lifting off the throttle tucks the tail back in.
+    //  1 = Ridge Racer: off the throttle long enough then a sharp turn of the wheel (or lift, brake tap, floor
+    //      it again while turning). The car slides at an angle to its path that the wheel opens or closes; it
+    //      only grips again once it is straight: not holding it straight keeps the slide and chains the bends.
+    //  2 = OutRun 2: the same slide, easier to start: a sharp turn of the wheel with a brake tap or a short
+    //      lift, the throttle can stay down.
+    //  3 = Daytona / Scud Race: a feint (wheel one way, then sharply the other) with a brake tap or a lift;
+    //      the car finds its grip again more easily (the angle closes by itself when not steering into it).
     public class Drift : MonoBehaviour
     {
         public static readonly string[] StyleNames = { "Origine", "Ridge Racer", "OutRun 2", "Daytona / Scud Race" };
@@ -40,18 +39,25 @@ namespace RaceBoot
         public static bool ForceInput;
         public static float ForceAccel, ForceBrake, ForceSteer;
         public static bool Drifting => inst != null && inst.drifting;
-        public static bool Spinning => inst != null && inst.spinTime > 0f;
-        public static float SlipAngle => inst != null ? inst.slip : 0f;
+        public static bool Spinning => false;
+        public static float SlipAngle => inst != null ? inst.angle : 0f;
         public static float Kmh => inst != null ? inst.kmh : 0f;
         public static float YawRate => inst != null && inst.rb ? inst.rb!.angularVelocity.y : 0f;
         public static int Direction => inst != null ? inst.dir : 0;
+        public static string Debug => inst == null || !inst.rb ? "-" :
+            $"damping={inst.rb!.angularDamping:F1} steerFsm={(inst.steerFsm ? inst.steerFsm!.enabled : false)} grip={inst.grip.Get():F2} bodyAngle={inst.angleVar.Get():F1} crash={inst.Crashing()} gameDrift={(inst.gameDrift ? inst.gameDrift!.enabled : false)}";
 
         // ---------------- game objects ----------------
 
         Transform? car;
         Rigidbody? rb;
         MonoBehaviour? input, steerFsm, accelFsm, angleFsm, gameDrift, gameDriftEnter, raceManager;
-        MonoBehaviour? bodyTilt, steerWheels, shake;
+        MonoBehaviour? bodyTilt, steerWheels, shake, crashFsm;
+        object? crashingVar;
+        PropertyInfo? crashingValue;
+
+        // The game's "crash" FSM raises "crashing" while the car touches a wall or another car.
+        bool Crashing() => crashingValue != null && crashingValue.GetValue(crashingVar) is bool b && b;
         FsmF accelVar, brakeVar, steerVar, steerValue, clampMin, clampMax, angleVar, grip, kmhVar;
         FsmB driftingVar;
         object? rmFsm;
@@ -96,6 +102,9 @@ namespace RaceBoot
             steerWheels = Showcase.Fsm("car_body", "steer wheels");
             shake = Showcase.Fsm("car_body", "shake animation");
             raceManager = Showcase.Fsm("GameManager", "race manager");
+            crashFsm = Showcase.Fsm("race_car_01", "crash");
+            crashingVar = Var(crashFsm, "GetFsmBool", "crashing");
+            crashingValue = crashingVar?.GetType().GetProperty("Value");
             rmFsm = raceManager ? raceManager!.GetType().GetProperty("Fsm")?.GetValue(raceManager) : null;
             rmState = rmFsm?.GetType().GetProperty("ActiveStateName", F);
             if (!rb || !input) return false;
@@ -113,7 +122,6 @@ namespace RaceBoot
             grip = new FsmF(FindGrip());
             applied = -1;
             drifting = false;
-            spinTime = 0f;
             lastBody = 0;
             return true;
         }
@@ -155,83 +163,144 @@ namespace RaceBoot
 
         // ---------------- inputs and gestures ----------------
 
-        float accel, brake, steer, kmh;
-        float lastAccel = 1f, liftedAt = -10f, brakeOnAt = -10f, lastBrake;
-        float t;   // fixed time
+        float accel, brake, steer, kmh, lastSteer;
+        float t;                                   // fixed time
+        float liftStart = -10f, liftEnd = -10f;    // throttle released (accel < 0.3) from / until
+        bool lifted;
+        float brakeAt = -10f, brakeOffAt = -10f;   // last brake press / release
+        float flickAt = -10f; int flickDir;        // sharp steering movement ("coup de volant")
+        float sideAt0 = -10f, sideAt1 = -10f;      // last time the wheel was turned left / right (feint)
+        float fullAt = -10f;                       // throttle floored again
 
-        void ReadInputs()
+        void ReadInputs(float dt)
         {
             if (ForceInput) { accel = ForceAccel; brake = ForceBrake; steer = ForceSteer; }
             else { accel = accelVar.Get(); brake = brakeVar.Get(); steer = steerVar.Get(); }
             kmh = kmhVar.Get();
-            if (accel < 0.25f && lastAccel >= 0.25f) liftedAt = t;
-            if (brake > 0.3f && lastBrake <= 0.3f) brakeOnAt = t;
-            lastAccel = accel; lastBrake = brake;
+
+            bool nowLifted = accel < 0.3f;
+            if (nowLifted && !lifted) liftStart = t;
+            if (!nowLifted && lifted) liftEnd = t;
+            if (accel > 0.9f && (lifted || t - liftEnd < 0.05f) && fullAt < liftEnd) fullAt = t;
+            lifted = nowLifted;
+
+            if (brake > 0.3f) brakeAt = t;
+            else if (t - brakeAt < dt * 1.5f) brakeOffAt = t;
+
+            // A sharp turn of the wheel (fast movement ending well off centre).
+            float rate = (steer - lastSteer) / Mathf.Max(dt, 1e-4f);
+            if (Mathf.Abs(rate) > 3.5f && Mathf.Abs(steer) > 0.55f && Mathf.Sign(rate) == Mathf.Sign(steer)) { flickAt = t; flickDir = steer > 0f ? 1 : -1; }
+            if (steer < -0.4f) sideAt0 = t;
+            if (steer > 0.4f) sideAt1 = t;
+            lastSteer = steer;
         }
 
-        // Lift-off then back on the throttle within half a second ("gas flick").
-        bool Flick() => accel > 0.7f && t - liftedAt < 0.5f && t - liftedAt > 0.02f;
-        // Brake tap: the brake has just been pressed.
-        bool BrakeTap() => t - brakeOnAt < 0.25f;
+        float LiftedFor => lifted ? t - liftStart : 0f;
+        float LastLift => lifted ? t - liftStart : liftEnd - liftStart;
+
+        // Gesture that starts a slide for each game, or 0. Returns the side (+1 right, -1 left).
+        int Gesture(int style)
+        {
+            bool flick = t - flickAt < 0.12f;
+            switch (style)
+            {
+                case 1: // Ridge Racer
+                    // Off the throttle long enough, then a sharp turn of the wheel.
+                    if (flick && (LiftedFor > 0.35f || (t - liftEnd < 0.25f && LastLift > 0.35f))) return flickDir;
+                    // Off the throttle, a brake tap, then floored again while turning.
+                    if (t - fullAt < 0.05f && t - brakeOffAt < 0.8f && LastLift > 0.2f && Mathf.Abs(steer) > 0.45f) return steer > 0f ? 1 : -1;
+                    return 0;
+                case 2: // OutRun 2: easier, the throttle can stay on
+                    if (flick && (t - brakeAt < 0.5f || (LastLift > 0.08f && t - liftStart < 0.6f))) return flickDir;
+                    if (t - fullAt < 0.05f && t - brakeOffAt < 0.8f && Mathf.Abs(steer) > 0.4f) return steer > 0f ? 1 : -1;
+                    return 0;
+                default: // Daytona / Scud Race: feint (turn one way, then sharply the other) plus brake or lift
+                    if (!flick) return 0;
+                    float other = flickDir > 0 ? sideAt0 : sideAt1;
+                    bool feint = t - other < 0.5f;
+                    bool cut = t - brakeAt < 0.8f || (LastLift > 0.1f && t - liftStart < 0.9f);
+                    return feint && cut ? flickDir : 0;
+            }
+        }
 
         // ---------------- drift ----------------
+        // The slide is an angle of the car to its path (positive = nose to the right). The wheel opens or
+        // closes it; with the wheel centred it stays. The car only grips again once it is straight
+        // (angle back to ~0 and held there a moment): swinging it through straight to the other side keeps
+        // the slide going, which chains the bends. The bigger the angle, the tighter the car turns.
 
         bool drifting;
-        int dir;              // +1 right, -1 left
-        float driftTime, slip, yaw, lowTime, liftTime, spinTime;
+        int dir;              // side of the slide: +1 right, -1 left
+        float angle;          // degrees
+        float driftTime, slip, straightTime;
+        float exitedAt = -10f;
+
+        // Per game: entry angle, steering rate (deg/s at full lock), self-straightening (deg/s),
+        // turn rate at 45 degrees (rad/s), speed loss (share per second at 90 degrees), minimum speed.
+        static readonly float[] EntryAngle = { 0f, 24f, 28f, 20f };
+        static readonly float[] SteerRate = { 0f, 85f, 100f, 75f };
+        static readonly float[] Straighten = { 0f, 0f, 2f, 18f };
+        static readonly float[] TurnAt45 = { 0f, 1.35f, 1.45f, 1.15f };
+        static readonly float[] Loss = { 0f, 0.10f, 0.05f, 0.30f };
+        static readonly float[] MinKmh = { 0f, 100f, 90f, 110f };
 
         void FixedUpdate()
         {
             if (!Resolve()) return;
-            t += Time.fixedDeltaTime;
+            float dt = Time.fixedDeltaTime;
+            t += dt;
             int style = Settings.DriftStyle;
             if (style == 0) return;
-            ReadInputs();
+            ReadInputs(dt);
 
             if (Time.timeScale <= 0f || State() != "racing")
             {
                 if (drifting) Exit();
+                angleVar.Set(0f);
                 return;
             }
 
-            float dt = Time.fixedDeltaTime;
             var fwd = Vector3.ProjectOnPlane(car!.forward, Vector3.up).normalized;
             var vel = Vector3.ProjectOnPlane(rb!.linearVelocity, Vector3.up);
-            // Slip: angle of the nose from the direction of travel (positive = nose to the right).
             slip = vel.magnitude > 3f ? Vector3.SignedAngle(vel, fwd, Vector3.up) : 0f;
-
-            if (spinTime > 0f) { Spin(dt); return; }
 
             if (!drifting)
             {
-                float minKmh = style == 1 ? 120f : style == 2 ? 110f : 130f;
-                bool gesture = Flick() || BrakeTap() || (style == 3 && accel < 0.2f && Mathf.Abs(steer) > 0.85f && kmh > 250f);
-                if (kmh > minKmh && Mathf.Abs(steer) > 0.45f && gesture) Enter(steer > 0f ? 1 : -1);
+                // The body angle FSM never brings its angle back to 0 by itself (the game's own drift FSM does
+                // it every frame): without this the body stays turned after a slide, as if still sliding.
+                angleVar.Set(0f);
+                int side = Gesture(style);
+                if (side != 0 && kmh > MinKmh[style] && t - exitedAt > 0.4f) Enter(side, EntryAngle[style]);
                 return;
             }
 
             driftTime += dt;
-            if (style == 3) Daytona(dt);
-            else Rail(style, dt);
+            // A hit (wall, car): the slide is over. The game's crash FSM tells it, a sudden loss of speed too.
+            if (Crashing() || (driftTime > 0.15f && kmh < kmhBefore * 0.75f)) { Exit(); kmhBefore = kmh; return; }
+            kmhBefore = Mathf.Lerp(kmhBefore, kmh, 1f - Mathf.Exp(-dt / 0.15f));
+            Slide(style, dt);
         }
 
         float savedDamping = -1f;
 
-        // The car's strong angular drag would eat most of the yaw the drift sets: off while sliding.
+        // The car's strong angular drag would eat the rotation the slide sets: off while sliding.
         void FreeYaw(bool free)
         {
             if (free) { if (savedDamping < 0f) savedDamping = rb!.angularDamping; rb!.angularDamping = 0f; }
             else if (savedDamping >= 0f) { rb!.angularDamping = savedDamping; savedDamping = -1f; }
         }
 
-        void Enter(int d)
+        float kmhBefore;
+
+        void Enter(int side, float startAngle)
         {
             drifting = true;
+            kmhBefore = kmh;
+            dir = side;
+            angle = side * startAngle;
+            driftTime = straightTime = 0f;
             FreeYaw(true);
-            dir = d;
-            driftTime = lowTime = liftTime = 0f;
-            yaw = rb!.angularVelocity.y;
-            if (steerFsm) steerFsm!.enabled = false;     // the drift drives the yaw
+            if (steerFsm) steerFsm!.enabled = false;     // the slide drives the rotation
             driftingVar.Set(true);                        // smoke, skid sound, body angle FSM
             BodyEvent(dir);
         }
@@ -239,7 +308,11 @@ namespace RaceBoot
         void Exit()
         {
             drifting = false;
-            if (spinTime <= 0f) FreeYaw(false);
+            exitedAt = t;
+            angle = 0f;
+            // Hand the car back turning as the normal steering would, without a jolt.
+            rb!.angularVelocity = new Vector3(0f, steer * 0.8f, 0f);
+            FreeYaw(false);
             if (steerFsm) steerFsm!.enabled = true;
             grip.Set(DefaultGrip);
             driftingVar.Set(false);
@@ -247,83 +320,32 @@ namespace RaceBoot
             BodyEvent(0);
         }
 
-        // ---- Ridge Racer / OutRun 2: the car follows the line, the body shows the angle ----
-
-        void Rail(int style, float dt)
+        void Slide(int style, float dt)
         {
-            bool outrun = style == 2;
-            float into = steer * dir;   // 1 = full lock into the turn, -1 = full counter-steer
+            // The wheel turns the car's angle; Daytona's tyres also pull it back straight on their own.
+            angle += steer * SteerRate[style] * dt;
+            bool notInto = Mathf.Abs(steer) < 0.2f || Mathf.Sign(steer) != Mathf.Sign(angle);
+            if (notInto) angle = Mathf.MoveTowards(angle, 0f, Straighten[style] * dt);
+            angle = Mathf.Clamp(angle, -55f, 55f);
 
-            // OutRun 2: a firm counter-steer flips the slide to the other side.
-            if (outrun && into < -0.55f && driftTime > 0.3f)
-            {
-                dir = -dir; into = -into; driftTime = 0f;
-                BodyEvent(dir);
-            }
+            // Straight again: grip back after a moment. Swung through to the other side: the slide goes on.
+            if (Mathf.Abs(angle) < 4f) straightTime += dt; else straightTime = 0f;
+            if (straightTime > (style == 3 ? 0.08f : 0.18f) || kmh < 60f) { Exit(); return; }
+            int side = angle > 0f ? 1 : angle < 0f ? -1 : dir;
+            if (side != dir && Mathf.Abs(angle) > 4f) { dir = side; BodyEvent(dir); }
 
-            // Exits.
-            if (Mathf.Abs(steer) < 0.15f || (!outrun && into < -0.3f)) lowTime += dt; else lowTime = 0f;
-            if (accel < 0.3f) liftTime += dt; else liftTime = 0f;
-            bool exit = kmh < (outrun ? 60f : 70f)
-                || lowTime > (outrun ? 0.4f : 0.2f)
-                || (!outrun && liftTime > 0.3f);
-            if (exit) { Exit(); rb!.angularVelocity = new Vector3(0f, rb.angularVelocity.y * 0.3f, 0f); return; }
-
-            // Yaw rate set by the wheel: tighter into the turn, wider on counter-steer.
-            float k = (into + 1f) * 0.5f;
-            float target = dir * (outrun ? Mathf.Lerp(0.30f, 2.0f, k) : Mathf.Lerp(0.40f, 1.85f, k));
-            yaw = Mathf.Lerp(yaw, target, 1f - Mathf.Exp(-(outrun ? 7f : 10f) * dt));
-            rb!.angularVelocity = new Vector3(0f, yaw, 0f);
+            // The car turns with its angle (a little with the wheel too) and keeps to its line.
+            float turn = angle / 45f * TurnAt45[style] + steer * 0.2f;
+            rb!.angularVelocity = new Vector3(0f, turn, 0f);
             grip.Set(DefaultGrip);
 
-            // Speed: almost kept (more lost in OutRun 2 when off the throttle).
-            float loss = outrun ? (accel > 0.3f ? 0.015f : 0.06f) : 0.03f;
+            // Speed scrubbed with the angle.
+            float loss = Loss[style] * Mathf.Abs(Mathf.Sin(angle * Mathf.Deg2Rad));
             var v = rb.linearVelocity;
             rb.linearVelocity = new Vector3(v.x * (1f - loss * dt), v.y, v.z * (1f - loss * dt));
 
-            // Body angle shown by the game's "car body drift angle" FSM.
-            float angle = outrun ? Mathf.Lerp(30f, 55f, k) : Mathf.Lerp(22f, 48f, k);
-            angleVar.Set(dir * angle);
-        }
-
-        // ---- Daytona / Scud Race: a real slide ----
-
-        void Daytona(float dt)
-        {
-            float into = steer * dir;
-            float slipDir = slip * dir;          // > 0 when the tail is out on the drift side
-
-            // Tail out under power, tucked in when lifting; counter-steer is the only way to hold the angle.
-            float drive = accel > 0.3f ? Mathf.Lerp(0.55f, 1.25f, accel) : -0.6f;
-            float target = dir * (drive + Mathf.Max(0f, slipDir - 25f) * 0.02f) + steer * 1.6f;
-            yaw = Mathf.Lerp(yaw, target, 1f - Mathf.Exp(-5f * dt));
-            rb!.angularVelocity = new Vector3(0f, yaw, 0f);
-
-            // Little sideways grip while the tail is out, more when lifting.
-            grip.Set(accel > 0.3f ? 0.03f : 0.10f);
-
-            // Scrubbing speed while sideways.
-            float scrub = 0.65f * Mathf.Abs(Mathf.Sin(slip * Mathf.Deg2Rad));
-            var v = rb.linearVelocity;
-            rb.linearVelocity = new Vector3(v.x * (1f - scrub * dt), v.y, v.z * (1f - scrub * dt));
-            angleVar.Set(0f);
-
-            if (Mathf.Abs(slip) > 80f) { spinTime = 1.1f; Exit(); return; }   // too much: spin
-            if (Mathf.Abs(slip) < 6f && driftTime > 0.35f && Mathf.Abs(into) < 0.5f) lowTime += dt; else lowTime = 0f;
-            if (lowTime > 0.15f || kmh < 60f) Exit();
-        }
-
-        // Spin-out: the car keeps turning and loses most of its speed, then grips again.
-        void Spin(float dt)
-        {
-            spinTime -= dt;
-            if (steerFsm && steerFsm!.enabled) steerFsm.enabled = false;
-            grip.Set(0.04f);
-            var v = rb!.linearVelocity;
-            rb.linearVelocity = new Vector3(v.x * (1f - 1.2f * dt), v.y, v.z * (1f - 1.2f * dt));
-            float w = rb.angularVelocity.y;
-            rb.angularVelocity = new Vector3(0f, Mathf.Lerp(w, (w >= 0f ? 1f : -1f) * 4f, 3f * dt), 0f);
-            if (spinTime <= 0f) { if (steerFsm) steerFsm!.enabled = true; grip.Set(DefaultGrip); rb.angularVelocity = Vector3.zero; FreeYaw(false); }
+            // The body shows the angle (the game's "car body drift angle" FSM).
+            angleVar.Set(angle);
         }
 
         int lastBody;
@@ -337,5 +359,7 @@ namespace RaceBoot
             Showcase.Send(steerWheels, ev);
             Showcase.Send(shake, ev);
         }
+
+        public static float Angle => inst != null ? inst.angle : 0f;
     }
 }

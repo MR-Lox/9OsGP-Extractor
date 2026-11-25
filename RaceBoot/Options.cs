@@ -711,9 +711,9 @@ namespace RaceBoot
         static readonly string[] DriftDescriptions =
         {
             "Dérapage d'origine du jeu : frein maintenu + braquage à fond au-dessus de 150 km/h.",
-            "En virage, lâchez l'accélérateur et réappuyez aussitôt (ou un coup de frein) : glisse très stable qui garde la vitesse. Le volant règle la trajectoire ; lâcher les gaz ou redresser fait raccrocher.",
-            "Même entrée qu'à Ridge Racer. Grande glisse très tolérante qui tient tant que le volant est braqué, même sans gaz ; un contre-braquage franc la bascule de l'autre côté pour enchaîner les S.",
-            "Coup de frein en braquant : l'arrière décroche vraiment et continue de tourner sous les gaz. Contre-braquez pour tenir l'angle, sinon c'est le tête-à-queue ; lâcher les gaz fait raccrocher. La glisse coûte de la vitesse.",
+            "Lâchez l'accélérateur un moment puis donnez un coup de volant (ou : lâcher, coup de frein, réaccélérer à fond en braquant). La glisse dure tant que la voiture n'est pas remise droite : contre-braquez pour la redresser et elle reprend son grip ; la faire passer de l'autre côté enchaîne les virages.",
+            "Comme Ridge Racer, mais plus facile à lancer : un coup de volant avec un coup de frein ou un bref lâcher, et on peut garder l'accélérateur.",
+            "Appel puis contre-appel du volant (braquer d'un côté puis vivement de l'autre), avec un coup de frein ou un lâcher. La voiture retrouve plus facilement son grip : l'angle se referme de lui-même dès qu'on ne braque plus dans le virage.",
         };
 
         void DrawGameplay(float s)
