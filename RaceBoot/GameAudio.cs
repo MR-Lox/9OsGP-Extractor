@@ -13,6 +13,9 @@ namespace RaceBoot
     //  - Soundtrack: the original race music, or the player's own files (mp3 / ogg / wav) from the "Music"
     //    folder next to the executable, one of them or all at random. The game's music FSM is paused while
     //    another track plays.
+    // Runs after every other script of the frame: the game writes the volume of some sources late in the
+    // frame (and every frame); whatever runs last decides what the audio mixes for that frame.
+    [DefaultExecutionOrder(32000)]
     public class GameAudio : MonoBehaviour
     {
         public const string Original = "", Random = "*random";
@@ -24,33 +27,89 @@ namespace RaceBoot
             var go = new GameObject("RaceBootAudio");
             DontDestroyOnLoad(go);
             inst = go.AddComponent<GameAudio>();
+            HookPlayerLoop();
         }
+
+        // The volumes are applied right before Unity mixes the audio of the frame (PostLateUpdate.UpdateAudio):
+        // some game scripts write the volume of their sources after every LateUpdate, which let a new sound
+        // start at its full volume before being corrected.
+        static void HookPlayerLoop()
+        {
+            var root = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
+            var systems = root.subSystemList;
+            for (int i = 0; i < systems.Length; i++)
+            {
+                if (systems[i].type != typeof(UnityEngine.PlayerLoop.PostLateUpdate)) continue;
+                var list = new List<UnityEngine.LowLevel.PlayerLoopSystem>(systems[i].subSystemList);
+                int at = list.FindIndex(x => x.type == typeof(UnityEngine.PlayerLoop.PostLateUpdate.UpdateAudio));
+                if (at < 0) return;
+                list.Insert(at + 1, new UnityEngine.LowLevel.PlayerLoopSystem { type = typeof(AfterAudio), updateDelegate = () => { if (inst) inst!.ProbeAfter(); } });
+                list.Insert(at, new UnityEngine.LowLevel.PlayerLoopSystem { type = typeof(GameAudio), updateDelegate = () => { if (inst) inst!.Apply(); } });
+                systems[i].subSystemList = list.ToArray();
+                root.subSystemList = systems;
+                UnityEngine.LowLevel.PlayerLoop.SetPlayerLoop(root);
+                hooked = true;
+                return;
+            }
+        }
+
+        struct AfterAudio { }
+        static bool hooked;
+
+        // Test bench: volume of one source as the audio system used it.
+        public static AudioSource? Watch;
+        public static float WatchedVolume = -1f;
+        void ProbeAfter() { if (Watch) WatchedVolume = Watch!.volume; }
 
         // ---------------- volumes ----------------
 
-        class Vol { public float Base, Written; }
+        class Vol { public float Base, Written, ReadBack; public int Frame; public Gain? Gain; }
         readonly Dictionary<AudioSource, Vol> vols = new Dictionary<AudioSource, Vol>();
-        AudioSource[] sources = new AudioSource[0];
+        readonly List<AudioSource> sources = new List<AudioSource>();
         float nextScan;
 
-        void LateUpdate()
+        // Every source of the scenes, inactive ones included: the pooled sounds (crashes, skids…) are
+        // known before they play, so their volume is set in the very frame they start. Scanning only the
+        // active sources found them up to half a second later, at full volume meanwhile.
+        void Scan()
         {
-            AudioListener.volume = Settings.VolMaster;
+            sources.Clear();
+            foreach (var s in Resources.FindObjectsOfTypeAll<AudioSource>())
+                if (s && s.gameObject.scene.IsValid()) sources.Add(s);
+            if (vols.Count > 2000) foreach (var k in vols.Keys.Where(k => !k).ToList()) vols.Remove(k);
+        }
+
+        public static string Probe(AudioSource s) => inst == null ? "no instance" :
+            $"listed={inst.sources.Contains(s)} count={inst.sources.Count} known={inst.vols.ContainsKey(s)} base={(inst.vols.TryGetValue(s, out var v) ? v.Base : -1f)} written={(inst.vols.TryGetValue(s, out var w) ? w.Written : -1f)} readback={(inst.vols.TryGetValue(s, out var x) ? x.ReadBack + "@" + x.Frame : "-")} now={s.volume} frame={Time.frameCount} last={inst.lastFrame}";
+        int lastFrame;
+
+        void LateUpdate() { if (!hooked) Apply(); }
+
+        void Apply()
+        {
+            lastFrame = Time.frameCount;
+            AudioListener.volume = 1f;
             if (Time.unscaledTime >= nextScan)
             {
-                nextScan = Time.unscaledTime + 0.5f;
-                sources = FindObjectsOfType<AudioSource>();
-                if (vols.Count > 600) foreach (var k in vols.Keys.Where(k => !k).ToList()) vols.Remove(k);
+                nextScan = Time.unscaledTime + 1f;
+                Scan();
                 FindMusic();
             }
             foreach (var src in sources)
             {
                 if (!src) continue;
-                float mult = src == music ? Settings.VolMusic : IsEngine(src) ? Settings.VolEngine : Settings.VolFx;
-                if (!vols.TryGetValue(src, out var v)) { v = new Vol { Base = src.volume }; vols[src] = v; }
+                float mult = Settings.VolMaster * (src == music ? Settings.VolMusic : IsEngine(src) ? Settings.VolEngine : Settings.VolFx);
+                if (!vols.TryGetValue(src, out var v)) { v = new Vol { Base = src.volume, Written = -1f }; vols[src] = v; }
                 else if (Mathf.Abs(src.volume - v.Written) > 0.0001f) v.Base = src.volume;   // written by the game
-                v.Written = v.Base * mult;
-                src.volume = v.Written;
+                // Above 100 %: the source is at full volume and a gain filter amplifies its signal.
+                float want = v.Base * mult;
+                float vol = Mathf.Min(want, 1f);
+                float gain = want > 1f && vol > 0f ? want / vol : 1f;
+                if (gain > 1.001f && !v.Gain) v.Gain = src.GetComponent<Gain>() ?? src.gameObject.AddComponent<Gain>();
+                if (v.Gain) v.Gain!.Factor = gain;
+                v.Written = vol;
+                if (src.volume != vol) src.volume = vol;
+                v.ReadBack = src.volume; v.Frame = Time.frameCount;
             }
             Soundtrack();
         }

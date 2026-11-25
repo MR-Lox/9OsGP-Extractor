@@ -82,10 +82,10 @@ namespace RaceBoot
                     case "Ffb": Ffb = b; break;
                     case "Replay": ReplayEnabled = b; break;
                     case "Intro": IntroEnabled = b; break;
-                    case "VolMaster": VolMaster = Mathf.Clamp01(fl); break;
-                    case "VolMusic": VolMusic = Mathf.Clamp01(fl); break;
-                    case "VolEngine": VolEngine = Mathf.Clamp01(fl); break;
-                    case "VolFx": VolFx = Mathf.Clamp01(fl); break;
+                    case "VolMaster": VolMaster = Mathf.Clamp(fl, 0f, 2f); break;
+                    case "VolMusic": VolMusic = Mathf.Clamp(fl, 0f, 2f); break;
+                    case "VolEngine": VolEngine = Mathf.Clamp(fl, 0f, 2f); break;
+                    case "VolFx": VolFx = Mathf.Clamp(fl, 0f, 2f); break;
                     case "Soundtrack": Soundtrack = v; break;
                     case "RaceCam": Arcade.LoadPose(v); break;
                     case "FfbInvert": FfbInvert = b; break;
@@ -596,13 +596,26 @@ namespace RaceBoot
         List<string>? trackNames;
         float tracksAt = -10f;
 
+        // 0 to 200 %, by steps of 5 %.
+        float Percent(string name, float v, float s)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(name, label, GUILayout.Height(36 * s), GUILayout.Width(300 * s));
+            v = GUILayout.HorizontalSlider(v, 0f, 2f, GUILayout.Height(36 * s));
+            v = Mathf.Round(v * 20f) / 20f;
+            GUILayout.Label(Mathf.RoundToInt(v * 100f) + " %", label, GUILayout.Width(110 * s));
+            GUILayout.EndHorizontal();
+            return v;
+        }
+
         void DrawAudio(float s)
         {
             GUILayout.Label(L.T("Volumes"), header);
-            Settings.VolMaster = Slider(L.T("Général"), Settings.VolMaster, 0f, 1f, "", s);
-            Settings.VolMusic = Slider(L.T("Musique"), Settings.VolMusic, 0f, 1f, "", s);
-            Settings.VolEngine = Slider(L.T("Moteurs"), Settings.VolEngine, 0f, 1f, "", s);
-            Settings.VolFx = Slider(L.T("Effets sonores"), Settings.VolFx, 0f, 1f, "", s);
+            Settings.VolMaster = Percent(L.T("Général"), Settings.VolMaster, s);
+            Settings.VolMusic = Percent(L.T("Musique"), Settings.VolMusic, s);
+            Settings.VolEngine = Percent(L.T("Moteurs"), Settings.VolEngine, s);
+            Settings.VolFx = Percent(L.T("Effets sonores"), Settings.VolFx, s);
+            GUILayout.Label(L.T("100 % = volume d'origine. Au-delà, le son est amplifié (le moteur est discret dans le jeu d'origine)."), small);
 
             GUILayout.Space(14 * s);
             GUILayout.Label(L.T("Bande-son"), header);

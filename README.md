@@ -25,7 +25,7 @@ et en fait un jeu autonome qui démarre directement sur la course, avec un vrai 
 | 🎨 **Graphismes** | Activez ou coupez le bezel de borne d'arcade, l'effet CRT, les contours noirs (cel shading), le post-traitement BD et la trame halftone sur les éclairages. |
 | 🕹️ **Ambiance borne d'arcade** | Présentation de la voiture avant le départ (trois plans qui se rapprochent, puis votre vue de course pour le compte à rebours), voiture immobilisée pendant le décompte, et après la course : replay, GAME OVER, transition à points noirs, puis « PRESS START ». |
 | 🎬 **Replay** | Après la course, la course est rejouée avec ses effets (fumée, terre, étincelles, flammes, feux de freins) et un réalisateur automatique : caméras TV au bord de la piste, poursuite, hélico, capot… Le dernier replay se revoit à tout moment avec **F9**. |
-| 🔊 **Audio** | Volumes général, musique, moteurs et effets. Bande-son au choix : la musique d'origine ou vos propres fichiers mp3 / ogg / wav (un morceau ou tous au hasard). |
+| 🔊 **Audio** | Volumes général, musique, moteurs et effets, de 0 à 200 %. Bande-son au choix : la musique d'origine ou vos propres fichiers mp3 / ogg / wav (un morceau ou tous au hasard). |
 | 🌍 **5 langues** | Menu d'options en English, Español, Français, Deutsch et Português BR (les langues de Takeover 2). |
 | ⏸️ **Menu Pause épuré** | Fond transparent pour garder la course visible, entrée OPTIONS retirée (le menu F1 la remplace). |
 | 📊 **HUD personnalisable** | Compteur de vitesse déplaçable et redimensionnable à part, autres infos remontables, plaquées aux bords en écran large, ou masquées bloc par bloc. |
@@ -95,7 +95,7 @@ Relancer l'extracteur met à jour une extraction existante : seuls les fichiers 
   - **Compte-tours et vitesse** : taille, position horizontale et verticale, placement en bas de l'écran en vue capot / intérieure.
   - **Autres informations** (temps, tour, position, temps au tour) : taille, hauteur, écartement horizontal et vertical (à 1, les blocs sont plaqués contre les bords en 16:9 / 21:9), marge aux bords.
   - Affichage ou masquage de chaque bloc, messages compris (départ, checkpoint, contresens).
-- **Audio** : volumes (général, musique, moteurs, effets sonores) et bande-son. Pour utiliser vos propres musiques, placez des fichiers mp3, ogg ou wav dans un dossier `Music` à côté de `9OsGP.exe` : ils apparaissent dans la liste, avec un mode aléatoire dès qu'il y en a plusieurs.
+- **Audio** : volumes de 0 à 200 % (général, musique, moteurs, effets sonores ; 100 % = volume d'origine, au-delà le son est amplifié, pratique pour le moteur, discret dans le jeu d'origine) et bande-son. Pour utiliser vos propres musiques, placez des fichiers mp3, ogg ou wav dans un dossier `Music` à côté de `9OsGP.exe` : ils apparaissent dans la liste, avec un mode aléatoire dès qu'il y en a plusieurs.
 - **Contrôles** : réassignation clavier et manette, et retour aux valeurs par défaut. L'onglet **Volant / pédalier** est détaillé ci-dessous.
 
 Les réglages sont enregistrés dans `9OsGP_settings.ini`, à côté de `9OsGP.exe`. Ils sont réappliqués au lancement, même si le jeu d'origine tente de remettre son propre mode d'affichage.
@@ -138,7 +138,12 @@ Bon à savoir :
 
 ### 💡 Sorties façon MAME (bornes d'arcade)
 
-Comme le protocole réseau de MAME, le jeu publie l'état des voyants sur le port TCP 8000 (local) : `mame_start = 9osgp`, puis des lignes `nom = valeur`. Les logiciels comme MameHooker, LEDBlinky ou DOFLinx peuvent ainsi piloter les boutons lumineux d'une borne :
+Le jeu publie l'état des voyants exactement comme MAME, pour que MameHooker, LEDBlinky ou DOFLinx pilotent les boutons lumineux d'une borne. Les deux modes de sortie de MAME sont proposés en même temps :
+
+- **messages Windows** (mode par défaut de ces logiciels) : fenêtre `MAMEOutput` et messages `MAMEOutputStart`, `MAMEOutputRegister`, `MAMEOutputUpdateState`… ;
+- **réseau** : port TCP 8000, IPv4 et IPv6, `mame_start = 9osgp` puis des lignes `nom = valeur`.
+
+Sorties :
 
 - `start_lamp` : clignote pendant l'attract (replay, GAME OVER, « PRESS START »), éteint en course ;
 - `view_lamp` : allumé pendant la course.

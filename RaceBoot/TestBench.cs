@@ -38,6 +38,7 @@ namespace RaceBoot
             if (pauseFsm) pauseFsm!.enabled = false;
             if (mode == "f9") { yield return F9Test(); Application.Quit(); yield break; }
             if (mode == "shaders") { ShaderDump(); Application.Quit(); yield break; }
+            if (mode == "volume") { yield return VolumeTest(); Application.Quit(); yield break; }
             if (mode == "quit") { yield return QuitTest(); Application.Quit(); yield break; }
             if (mode == "audio") { yield return AudioTest(); Application.Quit(); yield break; }
             if (mode == "intro") { yield return IntroTest(); Application.Quit(); yield break; }
@@ -388,6 +389,39 @@ namespace RaceBoot
             }
             yield return null;
             Settings.CameraView = saved;
+            Settings.Save();
+        }
+
+        // A pooled sound started while the effects are at 30 %: its volume must be scaled in that very frame.
+        IEnumerator VolumeTest()
+        {
+            float fx = Settings.VolFx, eng = Settings.VolEngine;
+            Settings.VolFx = 0.3f; Settings.VolEngine = 2f;
+            yield return new WaitForSecondsRealtime(2f);
+            AudioSource? pooled = null;
+            foreach (var src in Resources.FindObjectsOfTypeAll<AudioSource>())
+                if (src && src.gameObject.scene.IsValid() && !src.gameObject.activeInHierarchy && src.clip && src.transform.parent && src.transform.parent.name == "PoolBoss_T2") { pooled = src; break; }
+            if (pooled != null)
+            {
+                float before = pooled.volume;
+                pooled.volume = 0.8f;                 // as a pool would reset it
+                GameAudio.Watch = pooled;
+                pooled.gameObject.SetActive(true);
+                pooled.Play();
+                yield return new WaitForEndOfFrame();
+                Debug.Log($"[RaceBoot] testbench: pooled {pooled.name} started at volume {pooled.volume:F2} (game value 0.80, effects 30 %)");
+                Debug.Log("[RaceBoot] testbench: probe " + GameAudio.Probe(pooled));
+                Debug.Log("[RaceBoot] testbench: volume used by the audio mix in that frame = " + GameAudio.WatchedVolume.ToString("F2"));
+                pooled.Stop(); pooled.gameObject.SetActive(false); pooled.volume = before;
+            }
+            Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
+            yield return new WaitForSecondsRealtime(12f);
+            foreach (var src in FindObjectsOfType<AudioSource>())
+                if (src.outputAudioMixerGroup || src.name.ToLower().Contains("engine"))
+                    Debug.Log($"[RaceBoot] testbench: engine? {PathOf(src.transform)} vol={src.volume:F2} mixer={(src.outputAudioMixerGroup ? src.outputAudioMixerGroup!.audioMixer.name : "-")} playing={src.isPlaying} {GameAudio.Probe(src)}");
+            foreach (var g in FindObjectsOfType<Gain>())
+                Debug.Log($"[RaceBoot] testbench: gain {g.Factor:F2} on {PathOf(g.transform)} vol={g.GetComponent<AudioSource>()?.volume:F2}");
+            Settings.VolFx = fx; Settings.VolEngine = eng;
             Settings.Save();
         }
 

@@ -172,6 +172,7 @@ namespace RaceBoot
             { "Recentrer : volant droit, puis cliquez ici", new[] { "Re-centre: wheel straight, then click here", "Recentrar: volante recto y haz clic aquí", "Zentrieren: Lenkrad gerade, dann hier klicken", "Recentralizar: volante reto, depois clique aqui" } },
             { "Sorties façon MAME (réseau, port 8000)", new[] { "MAME-style outputs (network, port 8000)", "Salidas estilo MAME (red, puerto 8000)", "Ausgänge wie MAME (Netzwerk, Port 8000)", "Saídas estilo MAME (rede, porta 8000)" } },
             { "Bouton Start qui clignote pendant l'attract, voyant de vue en course (MameHooker, LEDBlinky…).", new[] { "Start button blinking during attract, view lamp in race (MameHooker, LEDBlinky…).", "Botón Start parpadeando en modo demo, luz de vista en carrera (MameHooker, LEDBlinky…).", "Start-Taste blinkt im Attract-Modus, Ansichtslampe im Rennen (MameHooker, LEDBlinky…).", "Botão Start piscando no modo demo, luz de visão na corrida (MameHooker, LEDBlinky…)." } },
+            { "100 % = volume d'origine. Au-delà, le son est amplifié (le moteur est discret dans le jeu d'origine).", new[] { "100 % = original volume. Above, the sound is amplified (the engine is quiet in the original game).", "100 % = volumen original. Por encima, el sonido se amplifica (el motor suena bajo en el juego original).", "100 % = Originallautstärke. Darüber wird verstärkt (der Motor ist im Originalspiel leise).", "100 % = volume original. Acima disso, o som é amplificado (o motor é baixo no jogo original)." } },
         };
     }
 }
