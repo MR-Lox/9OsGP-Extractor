@@ -170,7 +170,9 @@ namespace RaceBoot
         float brakeAt = -10f, brakeOffAt = -10f;   // last brake press / release
         float flickAt = -10f; int flickDir;        // sharp steering movement ("coup de volant")
         float sideAt0 = -10f, sideAt1 = -10f;      // last time the wheel was turned left / right (feint)
-        float fullAt = -10f;                       // throttle floored again
+        float punchAt = -10f;                      // throttle back on after a lift with a brake tap (lift, brake, gas)
+        float liftedAt = -10f;                     // last time the throttle was released (even very briefly)
+        bool punchArmed, wasOn;
 
         void ReadInputs(float dt)
         {
@@ -181,11 +183,20 @@ namespace RaceBoot
             bool nowLifted = accel < 0.3f;
             if (nowLifted && !lifted) liftStart = t;
             if (!nowLifted && lifted) liftEnd = t;
-            if (accel > 0.9f && (lifted || t - liftEnd < 0.05f) && fullAt < liftEnd) fullAt = t;
             lifted = nowLifted;
 
             if (brake > 0.3f) brakeAt = t;
             else if (t - brakeAt < dt * 1.5f) brakeOffAt = t;
+
+            // Lift / brake / gas, done as fast as the player likes: the throttle goes back up (past 0.6, no
+            // need to floor it at once) after being released, with the brake touched during that short lift.
+            if (accel < 0.4f) liftedAt = t;
+            if (brake > 0.2f && t - liftedAt < 0.1f) punchArmed = true;
+            bool on = accel > 0.6f;
+            if (on && !wasOn && punchArmed && t - brakeAt < 0.6f) punchAt = t;
+            if (on && !wasOn) punchArmed = false;
+            if (t - liftedAt > 1.2f && t - brakeAt > 1.2f) punchArmed = false;
+            wasOn = on;
 
             // A sharp turn of the wheel (fast movement ending well off centre).
             float rate = (steer - lastSteer) / Mathf.Max(dt, 1e-4f);
@@ -208,11 +219,12 @@ namespace RaceBoot
                     // Off the throttle long enough, then a sharp turn of the wheel.
                     if (flick && (LiftedFor > 0.35f || (t - liftEnd < 0.25f && LastLift > 0.35f))) return flickDir;
                     // Off the throttle, a brake tap, then floored again while turning.
-                    if (t - fullAt < 0.05f && t - brakeOffAt < 0.8f && LastLift > 0.2f && Mathf.Abs(steer) > 0.45f) return steer > 0f ? 1 : -1;
+                    // The wheel may already be turned or come just after.
+                    if (t - punchAt < 0.4f && Mathf.Abs(steer) > 0.35f) { punchAt = -10f; return steer > 0f ? 1 : -1; }
                     return 0;
                 case 2: // OutRun 2: easier, the throttle can stay on
                     if (flick && (t - brakeAt < 0.5f || (LastLift > 0.08f && t - liftStart < 0.6f))) return flickDir;
-                    if (t - fullAt < 0.05f && t - brakeOffAt < 0.8f && Mathf.Abs(steer) > 0.4f) return steer > 0f ? 1 : -1;
+                    if (t - punchAt < 0.4f && Mathf.Abs(steer) > 0.35f) { punchAt = -10f; return steer > 0f ? 1 : -1; }
                     return 0;
                 default: // Daytona / Scud Race: feint (turn one way, then sharply the other) plus brake or lift
                     if (!flick) return 0;

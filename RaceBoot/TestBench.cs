@@ -405,7 +405,8 @@ namespace RaceBoot
         IEnumerator DriftTest()
         {
             int saved = Settings.DriftStyle;
-            if (int.TryParse(arg, out int st)) Settings.DriftStyle = st;
+            bool quick = arg.EndsWith("q");
+            if (int.TryParse(arg.TrimEnd('q'), out int st)) Settings.DriftStyle = st;
             bool intro = Settings.IntroEnabled; Settings.IntroEnabled = false;
             Showcase.Send(Showcase.Fsm("GameManager", "race manager"), "FINISHED");
             var input = Showcase.Fsm("race_car_01", "INPUT");
@@ -431,7 +432,17 @@ namespace RaceBoot
             {
                 switch (Settings.DriftStyle)
                 {
-                    case 1: label = "lift"; a = 0f; s = 0f; yield return Run(0.45f); label = "flick"; s = 0.9f; yield return Run(0.1f); a = 1f; break;
+                    case 1:
+                        if (quick)
+                        {
+                            // In a bend, lift / brake / gas in a quarter of a second, the throttle ramped back up.
+                            label = "turn"; s = 0.5f; yield return Run(0.3f);
+                            label = "lift"; a = 0f; yield return Run(0.04f);
+                            label = "brake"; b = 1f; yield return Run(0.06f); b = 0f;
+                            label = "gas"; a = 0.5f; yield return Run(0.04f); a = 0.8f; yield return Run(0.04f); a = 1f; yield return Run(0.04f);
+                            break;
+                        }
+                        label = "lift"; a = 0f; s = 0f; yield return Run(0.45f); label = "flick"; s = 0.9f; yield return Run(0.1f); a = 1f; break;
                     case 2: label = "brake"; a = 1f; b = 1f; s = 0f; yield return Run(0.1f); b = 0f; label = "flick"; s = 0.9f; yield return Run(0.05f); break;
                     default: label = "feint"; a = 0f; b = 1f; s = -0.6f; yield return Run(0.25f); b = 0f; label = "flick"; s = 0.9f; yield return Run(0.05f); a = 1f; break;
                 }

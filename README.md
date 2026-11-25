@@ -125,7 +125,7 @@ Dans **F1 › Gameplay** :
 | Style | Entrée en glisse | Pendant la glisse | Sortie |
 |---|---|---|---|
 | **Origine** | Frein maintenu + braquage à fond au-dessus de 150 km/h | Glisse d'origine du jeu | Relâcher le frein |
-| **Ridge Racer** | Lâcher l'accélérateur un moment puis un coup de volant (ou : lâcher, coup de frein, réaccélérer à fond en braquant) | La voiture glisse en biais ; le volant ouvre ou referme l'angle, la trajectoire suit l'angle | Remettre la voiture droite : elle reprend son grip. La faire passer de l'autre côté enchaîne une nouvelle glisse |
+| **Ridge Racer** | Lâcher l'accélérateur un moment puis un coup de volant (ou, en braquant : lâcher, coup de frein, regaz, aussi vite que vous voulez) | La voiture glisse en biais ; le volant ouvre ou referme l'angle, la trajectoire suit l'angle | Remettre la voiture droite : elle reprend son grip. La faire passer de l'autre côté enchaîne une nouvelle glisse |
 | **OutRun 2** | Plus facile : un coup de volant avec un coup de frein ou un bref lâcher, l'accélérateur peut rester enfoncé | Comme Ridge Racer | Comme Ridge Racer |
 | **Daytona / Scud Race** | Appel puis contre-appel du volant (d'un côté puis vivement de l'autre), avec un coup de frein ou un lâcher | L'angle se referme de lui-même dès qu'on ne braque plus dans le virage | La voiture retrouve son grip plus facilement |
 
